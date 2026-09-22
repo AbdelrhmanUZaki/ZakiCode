@@ -336,6 +336,26 @@ export interface ZCodeAgentRespondSessionRuntimePreferencesParams {
     | { status: "failed"; message: string };
 }
 
+/**
+ * browser-use 远程中继：agent 的 interaction/browserList | interaction/browserExecute
+ * 反向请求包装。desktop-continuous 连接订阅 onDynamicBrowserRelayRequest 后，
+ * 服务端把无本地 executor 的浏览器反向请求推给桌面执行。
+ */
+export interface ZCodeBrowserRelayRequest {
+  requestId: string;
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  sessionId: string;
+  method: "list" | "execute";
+  params: unknown;
+}
+
+export interface ZCodeAgentRespondBrowserRelayParams {
+  requestId: string;
+  result?: unknown;
+  error?: { code: string; message: string };
+}
+
 export interface ZCodeAgentSessionSubscribeParams extends ZCodeAgentSessionTarget {
   deliveryKind: ZCodeDeliveryKind;
   afterSeq?: number;
@@ -708,6 +728,14 @@ export interface IZCodeAgentService {
     params: ZCodeAgentRespondSessionRuntimePreferencesParams,
   ): Promise<void>;
   onDynamicSessionRuntimePreferencesRequest(): Event<ZCodeAgentSessionRuntimePreferencesRequest>;
+  /**
+   * browser-use 远程中继请求流（desktop-continuous 订阅即能力协商）。
+   * 订阅数为 0 时，agent 的浏览器反向请求保持现状回退（browserList → 空列表，
+   * browserExecute → backend_unavailable），旧桌面端零行为变化。
+   */
+  onDynamicBrowserRelayRequest(): Event<ZCodeBrowserRelayRequest>;
+  /** 桌面执行完中继请求后回填结果；对应 pending 不存在时返回 false。 */
+  respondBrowserRelay(params: ZCodeAgentRespondBrowserRelayParams): Promise<boolean>;
   /**
    * CLI 进程级资源样本，带 services 打的 lane 标签（CLI 自己不知道 lane）。
    * 使用 dynamic event 避免 RPC 服务在无人订阅时缓冲周期事件；

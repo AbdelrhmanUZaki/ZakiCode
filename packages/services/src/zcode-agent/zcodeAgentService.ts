@@ -224,6 +224,8 @@ import type {
   ZCodeAgentConnectionFlowParams,
   ZCodeAgentSessionsIndexSubscribeParams,
   ZCodeAgentWorkspaceConfigSubscribeParams,
+  ZCodeAgentRespondBrowserRelayParams,
+  ZCodeBrowserRelayRequest,
 } from "./zcodeAgent.js";
 import {
   backgroundBashOutputResultSchema,
@@ -328,6 +330,8 @@ const PLUGIN_MANAGEMENT_REQUEST_TIMEOUT_MS = 5 * 60_000;
 const CHILD_PROCESSES_REQUEST_TIMEOUT_MS = 800;
 const PLUGIN_OPERATION_CANCEL_REQUEST_TIMEOUT_MS = 5_000;
 const SESSION_COMPACT_REQUEST_TIMEOUT_MS = 5 * 60_000;
+/** browser-use 远程中继：桌面执行（含 SSH 往返）的兜底上限；超时按无后端回退。 */
+const BROWSER_RELAY_REQUEST_TIMEOUT_MS = 30_000;
 
 interface PendingPermissionRequest {
   client: ZCodeProtocolClient;
@@ -343,6 +347,13 @@ interface PendingSessionRuntimePreferencesRequest extends PendingPermissionReque
   request: ZCodeAgentSessionRuntimePreferencesRequest;
   timeout: ReturnType<typeof setTimeout>;
   workspaceKey: string;
+}
+
+/** browser-use 远程中继请求的挂起表条目；桌面回填与超时任一先到即出表。 */
+interface PendingBrowserRelayRequest extends PendingPermissionRequest {
+  request: ZCodeBrowserRelayRequest;
+  startedAt: number;
+  timeout: ReturnType<typeof setTimeout>;
 }
 
 type SessionCreateCompatField =
@@ -1122,6 +1133,17 @@ export function createZCodeAgentService(
   }
   const sessionRuntimePreferencesRequestEmitter =
     new Emitter<ZCodeAgentSessionRuntimePreferencesRequest>();
+  // browser-use 远程中继：desktop-continuous 订阅 onDynamicBrowserRelayRequest 即能力协商；
+  // 无人订阅（旧桌面端 / SSH 断开）时浏览器反向请求保持现状回退，零行为变化。
+  let browserRelaySubscriberPresent = false;
+  const browserRelayRequestEmitter = new Emitter<ZCodeBrowserRelayRequest>({
+    onWillAddFirstListener: () => {
+      browserRelaySubscriberPresent = true;
+    },
+    onDidRemoveLastListener: () => {
+      browserRelaySubscriberPresent = false;
+    },
+  });
   const processResourceSampleEmitter = new Emitter<AgentLaneResourceSample>();
   const toolExecResourceEmitter = new Emitter<ZCodeToolExecResource>();
   const mcpResourceSamplesEmitter = new Emitter<ZCodeMcpResourceSample[]>();
@@ -1162,6 +1184,7 @@ export function createZCodeAgentService(
   const clientDisposables = new WeakMap<ZCodeProtocolClient, IDisposable[]>();
   const pendingPermissions = new Map<string, PendingPermissionRequest>();
   const pendingUserInputs = new Map<string, PendingPermissionRequest>();
+  const pendingBrowserRelayRequests = new Map<string, PendingBrowserRelayRequest>();
   // 内存诊断计数器：只读各 per-session 镜像表的 size。
   const memoryDiagnostics = registerMemoryDiagnosticsProvider("agent", () => ({
     sessionEmitters: sessionEmitters.size,
@@ -1203,6 +1226,46 @@ export function createZCodeAgentService(
   const sessionRuntimePreferencesAuthority = options?.sessionRuntimePreferencesAuthority ?? "local";
   const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferences;
 
+  /**
+   * browser-use 远程中继：把 agent 的浏览器反向请求推给订阅中的 desktop-continuous
+   * 连接执行，挂起等待 respondBrowserRelay 回填；超时/断开按无后端回退，
+   * 回退形状与无 executor 的现状分支逐字段一致。
+   */
+  function relayBrowserRequestToDesktop(
+    client: ZCodeProtocolClient,
+    protocolRequestId: ZCodeProtocolRequestId,
+    relay: ZCodeBrowserRelayRequest,
+  ): void {
+    const startedAt = Date.now();
+    const fallback = () => {
+      if (relay.method === "list") {
+        void client.respond(protocolRequestId, { browsers: [] });
+      } else {
+        void client.respond(protocolRequestId, {
+          ok: false,
+          error: {
+            code: "backend_unavailable",
+            message: "browser relay did not respond in time",
+          },
+          elapsedMs: Date.now() - startedAt,
+        });
+      }
+    };
+    const timeout = setTimeout(() => {
+      if (pendingBrowserRelayRequests.delete(relay.requestId)) {
+        fallback();
+      }
+    }, BROWSER_RELAY_REQUEST_TIMEOUT_MS);
+    pendingBrowserRelayRequests.set(relay.requestId, {
+      client,
+      protocolRequestId,
+      request: relay,
+      startedAt,
+      timeout,
+    });
+    browserRelayRequestEmitter.fire(relay);
+  }
+
   function invalidateWorkspaceClient(workspaceKey: string, client: ZCodeProtocolClient): void {
     for (const [key, pending] of pendingPermissions) {
       if (pending.client === client) {
@@ -1223,6 +1286,12 @@ export function createZCodeAgentService(
       if (pending.client === client) {
         clearTimeout(pending.timeout);
         pendingSessionRuntimePreferences.delete(key);
+      }
+    }
+    for (const [key, pending] of pendingBrowserRelayRequests) {
+      if (pending.client === client) {
+        clearTimeout(pending.timeout);
+        pendingBrowserRelayRequests.delete(key);
       }
     }
     for (const disposable of clientDisposables.get(client) ?? []) {
@@ -2411,6 +2480,21 @@ export function createZCodeAgentService(
           }
           const executor = options?.browserControlExecutor;
           if (!executor) {
+            // 远程中继：desktop-continuous 连接订阅了 browser relay 时转发执行；
+            // 否则保持现状回退（空列表），旧桌面端零行为变化。
+            if (browserRelaySubscriberPresent) {
+              relayBrowserRequestToDesktop(client, request.id, {
+                requestId: parsed.data.requestId,
+                workspacePath: parsed.data.workspacePath,
+                ...(parsed.data.workspaceIdentity
+                  ? { workspaceIdentity: parsed.data.workspaceIdentity }
+                  : {}),
+                sessionId: parsed.data.sessionId,
+                method: "list",
+                params: parsed.data,
+              });
+              return;
+            }
             void client.respond(request.id, { browsers: [] });
             return;
           }
@@ -2441,6 +2525,20 @@ export function createZCodeAgentService(
           }
           const executor = options?.browserControlExecutor;
           if (!executor) {
+            // 远程中继：同 browserList——订阅即能力，未订阅按无后端回退。
+            if (browserRelaySubscriberPresent) {
+              relayBrowserRequestToDesktop(client, request.id, {
+                requestId: parsed.data.requestId,
+                workspacePath: parsed.data.workspacePath,
+                ...(parsed.data.workspaceIdentity
+                  ? { workspaceIdentity: parsed.data.workspaceIdentity }
+                  : {}),
+                sessionId: parsed.data.sessionId,
+                method: "execute",
+                params: parsed.data,
+              });
+              return;
+            }
             void client.respond(request.id, {
               ok: false,
               error: {
@@ -3198,6 +3296,7 @@ export function createZCodeAgentService(
     }
     sessionEmitters.clear();
     sessionRuntimePreferencesRequestEmitter.dispose();
+    browserRelayRequestEmitter.dispose();
     processResourceSampleEmitter.dispose();
     mcpTelemetryEmitter.dispose();
     toolExecResourceEmitter.dispose();
@@ -4744,6 +4843,32 @@ export function createZCodeAgentService(
         }
         return disposable;
       };
+    },
+
+    onDynamicBrowserRelayRequest() {
+      return browserRelayRequestEmitter.event;
+    },
+
+    async respondBrowserRelay(params: ZCodeAgentRespondBrowserRelayParams): Promise<boolean> {
+      const pending = pendingBrowserRelayRequests.get(params.requestId);
+      if (!pending) {
+        logger.warn(undefined, "浏览器中继回填找不到挂起请求", {
+          event: "browser_relay.respond_missing",
+          requestId: params.requestId,
+        });
+        return false;
+      }
+      pendingBrowserRelayRequests.delete(params.requestId);
+      clearTimeout(pending.timeout);
+      if (params.error) {
+        await pending.client.respondError(pending.protocolRequestId, {
+          code: -32603,
+          message: params.error.message,
+        });
+      } else {
+        await pending.client.respond(pending.protocolRequestId, params.result);
+      }
+      return true;
     },
 
     onDynamicSessionEvent(params: ZCodeAgentSessionSubscribeParams) {
