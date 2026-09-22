@@ -904,6 +904,24 @@ export function createZCodeAgentConnectionScope(
       }
       return base.onDynamicProcessResourceSample();
     },
+    onDynamicBrowserRelayRequest() {
+      assertOpen();
+      // // Browser-use remote relay hands the agent's browser commands to the subscriber for execution in the local pane;
+      // // only the trusted desktop host relay (/ws/host, authenticated capability header) may subscribe;
+      // // terminal/mobile replay clients are always rejected so the browser command surface never leaks to non-desktop connections.
+      if (role !== "trusted-host-relay") {
+        return RpcEvent.None;
+      }
+      return base.onDynamicBrowserRelayRequest();
+    },
+    async respondBrowserRelay(params) {
+      assertOpen();
+      // // Result backfill sits behind the same trust boundary: an untrusted desktop relay must not answer (or forge) pending browser requests.
+      if (role !== "trusted-host-relay") {
+        throw new Error("fault.browserRelay.trustedHostRelayOnly");
+      }
+      return base.respondBrowserRelay(params);
+    },
     onDynamicToolExecResource() {
       // 完成事实与会话交付无关，禁止进入 continuous/replayable attachment。
       if (disposed || role !== "trusted-host-relay") return RpcEvent.None;

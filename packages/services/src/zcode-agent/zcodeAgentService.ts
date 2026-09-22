@@ -330,7 +330,7 @@ const PLUGIN_MANAGEMENT_REQUEST_TIMEOUT_MS = 5 * 60_000;
 const CHILD_PROCESSES_REQUEST_TIMEOUT_MS = 800;
 const PLUGIN_OPERATION_CANCEL_REQUEST_TIMEOUT_MS = 5_000;
 const SESSION_COMPACT_REQUEST_TIMEOUT_MS = 5 * 60_000;
-/** browser-use 远程中继：桌面执行（含 SSH 往返）的兜底上限；超时按无后端回退。 */
+/** Browser-use remote relay: overall cap for desktop execution (including the SSH round-trip); on timeout, fall back as if no backend. */
 const BROWSER_RELAY_REQUEST_TIMEOUT_MS = 30_000;
 
 interface PendingPermissionRequest {
@@ -349,7 +349,7 @@ interface PendingSessionRuntimePreferencesRequest extends PendingPermissionReque
   workspaceKey: string;
 }
 
-/** browser-use 远程中继请求的挂起表条目；桌面回填与超时任一先到即出表。 */
+/** A pending-table entry for a browser-use relay request; whichever comes first — desktop backfill or timeout — removes it. */
 interface PendingBrowserRelayRequest extends PendingPermissionRequest {
   request: ZCodeBrowserRelayRequest;
   startedAt: number;
@@ -1133,8 +1133,8 @@ export function createZCodeAgentService(
   }
   const sessionRuntimePreferencesRequestEmitter =
     new Emitter<ZCodeAgentSessionRuntimePreferencesRequest>();
-  // browser-use 远程中继：desktop-continuous 订阅 onDynamicBrowserRelayRequest 即能力协商；
-  // 无人订阅（旧桌面端 / SSH 断开）时浏览器反向请求保持现状回退，零行为变化。
+  // // Browser-use remote relay: a desktop-continuous subscription to onDynamicBrowserRelayRequest is the capability negotiation;
+  // // with no subscriber (older desktop / SSH dropped), browser reverse-requests keep today's fallback with zero behavior change.
   let browserRelaySubscriberPresent = false;
   const browserRelayRequestEmitter = new Emitter<ZCodeBrowserRelayRequest>({
     onWillAddFirstListener: () => {
@@ -1227,9 +1227,9 @@ export function createZCodeAgentService(
   const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferences;
 
   /**
-   * browser-use 远程中继：把 agent 的浏览器反向请求推给订阅中的 desktop-continuous
-   * 连接执行，挂起等待 respondBrowserRelay 回填；超时/断开按无后端回退，
-   * 回退形状与无 executor 的现状分支逐字段一致。
+   * Browser-use remote relay: push the agent's browser reverse-requests to a subscribed desktop-continuous
+   * connection, park pending until respondBrowserRelay backfills; timeout/disconnect falls back as if no backend,
+   * with the fallback shape field-for-field identical to the existing no-executor branch.
    */
   function relayBrowserRequestToDesktop(
     client: ZCodeProtocolClient,
@@ -2480,14 +2480,14 @@ export function createZCodeAgentService(
           }
           const executor = options?.browserControlExecutor;
           if (!executor) {
-            // 远程中继：desktop-continuous 连接订阅了 browser relay 时转发执行；
-            // 否则保持现状回退（空列表），旧桌面端零行为变化。
+            // // Remote relay: forward for execution when the desktop-continuous connection subscribed to the browser relay;
+            // // otherwise keep today's fallback (empty list); older desktops see zero behavior change.
             if (browserRelaySubscriberPresent) {
               relayBrowserRequestToDesktop(client, request.id, {
                 requestId: parsed.data.requestId,
                 workspaceKey: parsed.data.workspaceKey ?? resolveWorkspaceKey(workspace),
                 workspacePath: parsed.data.workspacePath ?? workspace.workspacePath,
-                ...(parsed.data.workspaceIdentity ?? workspace.workspaceIdentity
+                ...((parsed.data.workspaceIdentity ?? workspace.workspaceIdentity)
                   ? {
                       workspaceIdentity:
                         parsed.data.workspaceIdentity ?? workspace.workspaceIdentity,
@@ -2529,13 +2529,13 @@ export function createZCodeAgentService(
           }
           const executor = options?.browserControlExecutor;
           if (!executor) {
-            // 远程中继：同 browserList——订阅即能力，未订阅按无后端回退。
+            // // Remote relay: same as browserList — subscribing is the capability; without it, fall back as if no backend.
             if (browserRelaySubscriberPresent) {
               relayBrowserRequestToDesktop(client, request.id, {
                 requestId: parsed.data.requestId,
                 workspaceKey: parsed.data.workspaceKey ?? resolveWorkspaceKey(workspace),
                 workspacePath: parsed.data.workspacePath ?? workspace.workspacePath,
-                ...(parsed.data.workspaceIdentity ?? workspace.workspaceIdentity
+                ...((parsed.data.workspaceIdentity ?? workspace.workspaceIdentity)
                   ? {
                       workspaceIdentity:
                         parsed.data.workspaceIdentity ?? workspace.workspaceIdentity,
@@ -3335,6 +3335,10 @@ export function createZCodeAgentService(
     pendingPermissions.clear();
     pendingUserInputs.clear();
     pendingProviderRuntimeHeaders.clear();
+    for (const pending of pendingBrowserRelayRequests.values()) {
+      clearTimeout(pending.timeout);
+    }
+    pendingBrowserRelayRequests.clear();
     for (const pending of pendingSessionRuntimePreferences.values()) {
       clearTimeout(pending.timeout);
     }
