@@ -1688,6 +1688,20 @@ async function createWindowRemoteConnectionHandle(params: {
     connectionServices: backendConnection.services,
     sourceServices: activeServices ?? undefined,
     parentPort,
+    // // Browser relay resolves the logical remote session by workspace scope: guest-owner and
+    // // renderer pane-reveal matching depend on remoteSessionId; pick the newest online session so a stale generation cannot claim ownership.
+    resolveRemoteSessionIdForWorkspace: (scope) => {
+      const identity = scope.workspaceIdentity?.trim();
+      const candidates = windowRemoteConnectionRegistry
+        .listSessions()
+        .filter((session) =>
+          identity
+            ? session.workspaceIdentity === identity
+            : session.workspacePath === scope.workspacePath,
+        )
+        .filter((session) => session.state === "online" || session.state === "connecting");
+      return candidates.at(-1)?.remoteSessionId;
+    },
     createRemotePromptAttachmentSessionService: (service) =>
       createRemotePromptAttachmentSessionService(service, {
         materializePromptAttachments,

@@ -99,8 +99,17 @@ export function createRemoteWorkspaceServiceCollection(params: {
   runtimePreferencesBridge: {
     onError: (error: unknown) => void;
   };
-  /** 本机 pane 执行桥（WebContentsView+CDP）；远端 agent 的浏览器反向请求经它执行。 */
+  /** Local pane execution bridge (WebContentsView+CDP); the remote agent's browser reverse-requests execute through it. */
   browserControlExecutor: BrowserAmbientContextExecutor;
+  /**
+   * Browser relay pane-ownership correction: resolve the current logical remote session id by
+   * the relay envelope's workspace scope. Guest-owner and renderer reveal matching both key on
+   * remoteSessionId; a remote agent's BrowserCommand does not carry it, and without it the tab only mounts in the background with the pane never revealed.
+   */
+  resolveRemoteSessionIdForWorkspace?: (scope: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+  }) => string | undefined;
 }): ServiceCollection {
   assertLegacyRemoteWorkspaceRpcContract(params.connectionServices);
   const localSettingService = createSettingService();
@@ -313,9 +322,9 @@ export function createRemoteWorkspaceServiceCollection(params: {
     },
   );
 
-  // browser-use 远程中继：远端 agent 的 interaction/browserList|browserExecute 反向请求
-  // 路由到本机 pane 执行桥（与本地 Host 同一 browserControlMainBridge），结果经
-  // respondBrowserRelay 原路返回。SSH 断开时本订阅随连接销毁，服务端超时兜底。
+  // // Browser-use remote relay: the remote agent's interaction/browserList|browserExecute reverse-requests
+  // // route to the local pane execution bridge (same browserControlMainBridge the local Host uses); results return
+  // // via respondBrowserRelay. The subscription dies with the SSH connection; the server-side timeout is the backstop.
   params.connectionServices.zcodeAgentService.onDynamicBrowserRelayRequest()((request) => {
     const relayStartedAt = Date.now();
     const relayContext = {
@@ -329,7 +338,7 @@ export function createRemoteWorkspaceServiceCollection(params: {
     void (async () => {
       let response: { result?: unknown; error?: { code: string; message: string } };
       try {
-        // execute 转发参数中 workspace 定位可缺省，由 relay 信封携带的服务端解析值补全。
+        // // Workspace positioning in execute forwarding params is optional; the server-resolved values in the relay envelope fill it in.
         const workspaceDefaults = {
           workspaceKey: request.workspaceKey,
           workspacePath: request.workspacePath,
@@ -360,10 +369,17 @@ export function createRemoteWorkspaceServiceCollection(params: {
                 .join("; ")}`,
             );
           }
+          // // A remote BrowserCommand has no remoteSessionId concept; resolve this connection's logical session by workspace scope so
+          // // guest owner / renderer reveal / recording upload all line up.
+          const relayedRemoteSessionId = params.resolveRemoteSessionIdForWorkspace?.({
+            workspacePath: request.workspacePath,
+            workspaceIdentity: request.workspaceIdentity,
+          });
           response = {
             result: await params.browserControlExecutor.execute({
               ...parsed.data,
               ...workspaceDefaults,
+              ...(relayedRemoteSessionId ? { remoteSessionId: relayedRemoteSessionId } : {}),
               clientMode: parsed.data.clientMode ?? "desktop-continuous",
               sessionContext: parsed.data.sessionContext ?? "live",
             }),
