@@ -12,6 +12,7 @@ import {
   IBroadcastService,
   IZCodeTaskService,
   IZCodeAgentService,
+  type BrowserAmbientContextExecutor,
   IZCodeSessionService,
   IConversationShareService,
   IBotsService,
@@ -72,6 +73,8 @@ import {
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
   type ProviderFamilyDomain,
   type ZCodeSessionRuntimePreferencesResult,
+  zcodeBrowserExecuteParamsSchema,
+  zcodeBrowserListParamsSchema,
   ZAI_PROVIDER_ID,
 } from "@zcode/shared";
 import { assertLegacyRemoteWorkspaceRpcContract } from "./legacyRemoteWorkspaceRpcContract.js";
@@ -81,6 +84,7 @@ import {
 } from "./remoteProviderProvisioningService.js";
 
 const runtimePreferencesLogger = createServiceLogger("remote-runtime-preferences");
+const browserRelayLogger = createServiceLogger("remote-browser-relay");
 const ZCODE_JWT_TOKEN_KEY = "zcodejwttoken";
 
 export function createRemoteWorkspaceServiceCollection(params: {
@@ -95,6 +99,8 @@ export function createRemoteWorkspaceServiceCollection(params: {
   runtimePreferencesBridge: {
     onError: (error: unknown) => void;
   };
+  /** 本机 pane 执行桥（WebContentsView+CDP）；远端 agent 的浏览器反向请求经它执行。 */
+  browserControlExecutor: BrowserAmbientContextExecutor;
 }): ServiceCollection {
   assertLegacyRemoteWorkspaceRpcContract(params.connectionServices);
   const localSettingService = createSettingService();
@@ -306,6 +312,94 @@ export function createRemoteWorkspaceServiceCollection(params: {
       });
     },
   );
+
+  // browser-use 远程中继：远端 agent 的 interaction/browserList|browserExecute 反向请求
+  // 路由到本机 pane 执行桥（与本地 Host 同一 browserControlMainBridge），结果经
+  // respondBrowserRelay 原路返回。SSH 断开时本订阅随连接销毁，服务端超时兜底。
+  params.connectionServices.zcodeAgentService.onDynamicBrowserRelayRequest()((request) => {
+    const relayStartedAt = Date.now();
+    const relayContext = {
+      event: "zcode_protocol.browser_relay.host_request_received",
+      module: "desktop.host.remote_workspace",
+      requestId: request.requestId,
+      method: request.method,
+      sessionId: request.sessionId,
+    };
+    browserRelayLogger.info(undefined, "browser relay host request received", relayContext);
+    void (async () => {
+      let response: { result?: unknown; error?: { code: string; message: string } };
+      try {
+        // execute 转发参数中 workspace 定位可缺省，由 relay 信封携带的服务端解析值补全。
+        const workspaceDefaults = {
+          workspaceKey: request.workspaceKey,
+          workspacePath: request.workspacePath,
+          ...(request.workspaceIdentity ? { workspaceIdentity: request.workspaceIdentity } : {}),
+        };
+        if (request.method === "list") {
+          const parsed = zcodeBrowserListParamsSchema.safeParse(request.params);
+          if (!parsed.success) {
+            throw new Error(
+              `Invalid relayed browserList params: ${parsed.error.issues
+                .slice(0, 3)
+                .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+                .join("; ")}`,
+            );
+          }
+          const browsers = await params.browserControlExecutor.list({
+            ...parsed.data,
+            ...workspaceDefaults,
+          });
+          response = { result: { browsers } };
+        } else {
+          const parsed = zcodeBrowserExecuteParamsSchema.safeParse(request.params);
+          if (!parsed.success) {
+            throw new Error(
+              `Invalid relayed browserExecute params: ${parsed.error.issues
+                .slice(0, 3)
+                .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+                .join("; ")}`,
+            );
+          }
+          response = {
+            result: await params.browserControlExecutor.execute({
+              ...parsed.data,
+              ...workspaceDefaults,
+              clientMode: parsed.data.clientMode ?? "desktop-continuous",
+              sessionContext: parsed.data.sessionContext ?? "live",
+            }),
+          };
+        }
+      } catch (error: unknown) {
+        const relayError = {
+          code: "execution_error" as const,
+          message: error instanceof Error ? error.message : String(error),
+        };
+        response = { error: relayError };
+        browserRelayLogger.warn(undefined, "browser relay host execution failed", {
+          ...relayContext,
+          durationMs: Date.now() - relayStartedAt,
+          error: relayError.message,
+        });
+      }
+      try {
+        await params.connectionServices.zcodeAgentService.respondBrowserRelay({
+          requestId: request.requestId,
+          ...response,
+        });
+        browserRelayLogger.info(undefined, "browser relay host response sent", {
+          ...relayContext,
+          durationMs: Date.now() - relayStartedAt,
+          ok: response.error === undefined,
+        });
+      } catch (error: unknown) {
+        browserRelayLogger.warn(undefined, "browser relay host response failed", {
+          ...relayContext,
+          durationMs: Date.now() - relayStartedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
+  });
 
   // Web 手机远控进入 SSH task 时只连到 remote workspace host，
   // 没有桌面 renderer 那层 `baseServices + remoteServices` 合并。

@@ -139,6 +139,7 @@ export {
   type ZCodeAgentLocalRuntimeChildProcesses,
   ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE,
 } from "./zcode-agent/zcodeAgent.js";
+export { type BrowserAmbientContextExecutor } from "./zcode-agent/zcodeAgentBrowserAmbientContext.js";
 export {
   isZCodeAgentMcpStatusModeUnsupportedError,
   ZCODE_AGENT_MCP_STATUS_MODE_UNSUPPORTED_ERROR_CODE,

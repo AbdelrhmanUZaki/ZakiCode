@@ -1701,6 +1701,7 @@ async function createWindowRemoteConnectionHandle(params: {
         taskRealtimePort: activeSessionRealtimePort ?? undefined,
       }),
     promptAttachmentTransferService,
+    browserControlExecutor: browserControlMainBridge,
     runtimePreferencesBridge: {
       onError: (error: unknown) => logger.warn("remote runtime preferences bridge failed", error),
     },

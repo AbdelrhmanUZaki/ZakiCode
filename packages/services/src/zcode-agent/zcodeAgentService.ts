@@ -2485,9 +2485,13 @@ export function createZCodeAgentService(
             if (browserRelaySubscriberPresent) {
               relayBrowserRequestToDesktop(client, request.id, {
                 requestId: parsed.data.requestId,
-                workspacePath: parsed.data.workspacePath,
-                ...(parsed.data.workspaceIdentity
-                  ? { workspaceIdentity: parsed.data.workspaceIdentity }
+                workspaceKey: parsed.data.workspaceKey ?? resolveWorkspaceKey(workspace),
+                workspacePath: parsed.data.workspacePath ?? workspace.workspacePath,
+                ...(parsed.data.workspaceIdentity ?? workspace.workspaceIdentity
+                  ? {
+                      workspaceIdentity:
+                        parsed.data.workspaceIdentity ?? workspace.workspaceIdentity,
+                    }
                   : {}),
                 sessionId: parsed.data.sessionId,
                 method: "list",
@@ -2529,9 +2533,13 @@ export function createZCodeAgentService(
             if (browserRelaySubscriberPresent) {
               relayBrowserRequestToDesktop(client, request.id, {
                 requestId: parsed.data.requestId,
-                workspacePath: parsed.data.workspacePath,
-                ...(parsed.data.workspaceIdentity
-                  ? { workspaceIdentity: parsed.data.workspaceIdentity }
+                workspaceKey: parsed.data.workspaceKey ?? resolveWorkspaceKey(workspace),
+                workspacePath: parsed.data.workspacePath ?? workspace.workspacePath,
+                ...(parsed.data.workspaceIdentity ?? workspace.workspaceIdentity
+                  ? {
+                      workspaceIdentity:
+                        parsed.data.workspaceIdentity ?? workspace.workspaceIdentity,
+                    }
                   : {}),
                 sessionId: parsed.data.sessionId,
                 method: "execute",

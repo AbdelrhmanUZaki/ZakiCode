@@ -337,13 +337,15 @@ export interface ZCodeAgentRespondSessionRuntimePreferencesParams {
 }
 
 /**
- * browser-use 远程中继：agent 的 interaction/browserList | interaction/browserExecute
- * 反向请求包装。desktop-continuous 连接订阅 onDynamicBrowserRelayRequest 后，
- * 服务端把无本地 executor 的浏览器反向请求推给桌面执行。
+ * Browser-use remote relay: wrappers for the agent's interaction/browserList | interaction/browserExecute
+ * reverse requests. Once a desktop-continuous connection subscribes to onDynamicBrowserRelayRequest,
+ * the server pushes browser reverse-requests that lack a local executor to the desktop for execution.
  */
 export interface ZCodeBrowserRelayRequest {
   requestId: string;
-  workspacePath?: string;
+  /** Server-resolved workspace positioning (both optional in execute forwarding params; the host side fills in from these). */
+  workspaceKey: string;
+  workspacePath: string;
   workspaceIdentity?: string;
   sessionId: string;
   method: "list" | "execute";
@@ -729,12 +731,12 @@ export interface IZCodeAgentService {
   ): Promise<void>;
   onDynamicSessionRuntimePreferencesRequest(): Event<ZCodeAgentSessionRuntimePreferencesRequest>;
   /**
-   * browser-use 远程中继请求流（desktop-continuous 订阅即能力协商）。
-   * 订阅数为 0 时，agent 的浏览器反向请求保持现状回退（browserList → 空列表，
-   * browserExecute → backend_unavailable），旧桌面端零行为变化。
+   * Browser-use remote relay request stream (subscribing from desktop-continuous acts as capability negotiation).
+   * With zero subscribers the agent's browser reverse-requests fall back to today's behavior (browserList → empty list,
+   * browserExecute → backend_unavailable); older desktops see zero behavior change.
    */
   onDynamicBrowserRelayRequest(): Event<ZCodeBrowserRelayRequest>;
-  /** 桌面执行完中继请求后回填结果；对应 pending 不存在时返回 false。 */
+  /** Backfills the result after the desktop executes a relayed request; returns false when the pending entry is gone. */
   respondBrowserRelay(params: ZCodeAgentRespondBrowserRelayParams): Promise<boolean>;
   /**
    * CLI 进程级资源样本，带 services 打的 lane 标签（CLI 自己不知道 lane）。
