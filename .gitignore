@@ -14,6 +14,8 @@ packages/desktop/bundled-tools/
 packages/desktop/mock-cdn/
 # tsup 在加载 tsup.config.ts 时落盘的临时打包配置，随 dev/build 重新生成。
 packages/desktop/tsup.config.bundled_*.mjs
+# ZCode sessions writing plans/runtime data into the repo workspace.
+.zcode/
 *.tsbuildinfo
 .DS_Store
 coverage/
