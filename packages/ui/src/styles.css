@@ -78,6 +78,14 @@ body {
   }
 }
 
+/* bidi：文本块按首个强方向字符自动定方向（UAX #9 plaintext），
+ * 阿拉伯语等 RTL 内容无需开关即可阅读；纯英文内容渲染不变。
+ * 选择器刻意排除 pre/code/CodeViewer——代码必须保持 LTR。 */
+.zcode-bidi :is(p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th) {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
 .side-pane-open-tab-shell {
   container: side-pane-open-tab / inline-size;
 }

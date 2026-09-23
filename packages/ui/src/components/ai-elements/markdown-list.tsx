@@ -17,10 +17,12 @@ export function MarkdownUnorderedList({
   return (
     <ul
       className={cn(
-        "my-3 list-outside list-disc space-y-1.5 pl-5 marker:text-foreground-subtlest",
+        // // ps (inline-start) + dir="auto": RTL list indent and marker land on the right; LTR list rendering is unchanged.
+        "my-3 list-outside list-disc space-y-1.5 ps-5 marker:text-foreground-subtlest",
         "[&_ul]:my-1.5 [&_ol]:my-1.5",
         className,
       )}
+      dir="auto"
       data-markdown-list="unordered"
       data-streamdown="unordered-list"
       {...props}
@@ -44,6 +46,7 @@ export function MarkdownOrderedList({
         "[&_ul]:my-1.5 [&_ol]:my-1.5",
         className,
       )}
+      dir="auto"
       data-markdown-list="ordered"
       data-streamdown="ordered-list"
       {...props}
@@ -55,8 +58,11 @@ export type MarkdownListItemProps = ComponentProps<"li"> & MarkdownListNodeProp;
 
 export function MarkdownListItem({ className, node: _node, ...props }: MarkdownListItemProps) {
   return (
+    // // dir="auto": ::marker placement follows the li's direction property, and unicode-bidi:plaintext does not
+    // // change direction; each list item takes dir from its first strong character, so Arabic numbering/bullets land on the right.
     <li
-      className={cn("pl-1 [&>p]:my-0 [&>p]:inline", className)}
+      className={cn("ps-1 [&>p]:my-0 [&>p]:inline", className)}
+      dir="auto"
       data-streamdown="list-item"
       {...props}
     />

@@ -9,6 +9,7 @@
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible.js";
 import { cn } from "../lib/utils.js";
+import { splitPartsIntoBidiLines } from "../../lib/bidiText.js";
 import { TID_CHAT_REASONING_CONTENT, TID_CHAT_REASONING_TRIGGER } from "@zcode/shared";
 import { BrainIcon, ChevronRightIcon } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -546,8 +547,10 @@ export const ReasoningContent = memo(
               className={cn(
                 "max-h-60 space-y-2 overflow-auto text-ui-base text-foreground-subtlest",
                 // CUA Group 已提供清晰的父级边界；子思考继续显示左导线与缩进会形成重复层级。
-                variant === "default" && "ml-2 border-border border-l pl-3.5",
+                // // Logical ms/border-s/ps: under RTL content the rail and indent flip to the right; LTR rendering is unchanged.
+                variant === "default" && "ms-2 border-border border-s ps-3.5",
               )}
+              dir="auto"
               data-reasoning-scroll-mask={scrollMaskData}
               onScroll={handleScroll}
               style={scrollMaskStyle}
@@ -562,7 +565,19 @@ export const ReasoningContent = memo(
                 ref={contentRef}
                 className="min-w-0 whitespace-pre-wrap break-words text-foreground-subtlest"
               >
-                {children}
+                {/* Reasoning content is plain text (a string): split into block lines with dir="auto",
+                    每行按首个强方向字符定方向——阿拉伯语行右对齐可读；空行用 1lh 保持行高。 */}
+                {splitPartsIntoBidiLines([{ type: "text", text: children }]).map(
+                  (line, lineIndex) => (
+                    <span
+                      key={lineIndex}
+                      dir="auto"
+                      className={cn("block", line.length === 0 && "min-h-[1lh]")}
+                    >
+                      {line.map((part) => (part.type === "text" ? part.text : null))}
+                    </span>
+                  ),
+                )}
               </div>
             </div>
           </div>

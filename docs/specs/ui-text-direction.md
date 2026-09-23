@@ -1,6 +1,6 @@
 # Spec: Automatic text direction (bidi) for chat content
 
-Status 2026-09-23: S1–S6 implemented; unit/type/arch checks pass; bidi mechanism visually verified in Chromium; in-app E2E pending (environment lacks Node 24 — see verification log).
+Status 2026-09-23: S1–S6 implemented; unit/type/arch checks pass; bidi mechanism visually verified in Chromium; in-app E2E pending (environment lacks Node 24 — see verification log). Note: the first commit of this work (efbd285) shipped only the lib/spec/docs half — the renderer wiring landed in a follow-up commit after the app was observed not to render RTL.
 
 ## Goal
 
@@ -33,14 +33,19 @@ Intentionally LTR: `CodeViewer` (preview pane code view and non-markdown text fi
 
 ## Known limitations (accepted)
 
-- List markers/bullets and the table wrapper box keep container-level LTR; text order and per-block alignment flip correctly. Full box-level RTL (marker on the right) would need per-block JS `dir` detection — out of scope.
+- Table column order and the table wrapper box keep container-level LTR; cells flip individually via the `.zcode-bidi` rule. Full box-level RTL table reordering would need per-block JS `dir` detection — out of scope.
 - Plain-text fallback (markdown render error path) is whole-block `dir="auto"`, not per-line.
+
+## Box-level direction (list markers, borders)
+
+`unicode-bidi: plaintext` fixes text order and alignment but not the `direction` property, which decides `::marker` side and physical border/padding sides. Therefore markdown `ul`/`ol`/`li`/`blockquote` and the reasoning guide line carry `dir="auto"` (direction resolves from first strong character) and use logical properties (`ps-*`, `border-s`, `ms-*`) instead of physical `pl-*`/`border-l`/`ml-*`. Both changes are no-ops for LTR content. Verified in Chromium: Arabic list numbers/bullets render on the right without clipping (matches the explicit `dir="rtl"` reference rendering; the numeral sits rightmost with the period to its left, per Arabic convention), English lists unchanged.
 
 ## Acceptance scenarios
 
 1. Assistant replies with a pure-Arabic paragraph → rendered RTL, right-aligned; following English paragraph in the same message stays LTR.
 2. Arabic inside a fenced code block or inline code → stays LTR.
 3. Arabic in a markdown table cell → cell text RTL; table structure unchanged.
+   3a. Arabic ordered/unordered list → numbers/bullets on the right side, no clipping; English lists unchanged; Arabic blockquote vertical border flips to the right.
 4. User sends a multi-line message: line 1 English, line 2 Arabic → line 1 LTR left-aligned, line 2 RTL right-aligned; mention chips stay inline in their line; copying the bubble preserves lines.
 5. Reasoning block with Arabic lines → per-line direction.
 6. Composer: typing Arabic first → input base direction flips to RTL; typing English after clearing → back to LTR.

@@ -119,6 +119,8 @@ export const PromptInputTextarea = ({
     <InputGroupTextarea
       className={cn("field-sizing-content max-h-48 min-h-16", className)}
       name="message"
+      // // dir="auto": base direction follows the first strong character (Arabic input becomes RTL); set before expansion so callers can override.
+      dir="auto"
       onCompositionEnd={handleCompositionEnd}
       onCompositionStart={handleCompositionStart}
       onKeyDown={handleKeyDown}

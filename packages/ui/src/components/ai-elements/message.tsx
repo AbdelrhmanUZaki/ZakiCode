@@ -357,7 +357,6 @@ export type MessageResponseProps = {
   forceCodeWrap?: boolean;
   className?: string;
   children?: ReactNode;
-  dir?: "auto" | "ltr" | "rtl";
   streaming?: boolean;
   streamingAnimationKey?: string;
   workspacePath?: string;
@@ -736,7 +735,8 @@ class MessageResponseMarkdownBoundary extends Component<
   override render() {
     if (this.state.error) {
       return (
-        <div className={this.props.className}>
+        // // dir="auto": fallback plain text has no block children to receive .zcode-bidi rules, so the whole block takes direction from its first strong character.
+        <div className={this.props.className} dir="auto">
           {/* 单条 markdown 渲染异常时降级为纯文本，避免错误继续冒泡到会话区边界。*/}
           {this.props.fallbackText}
         </div>
@@ -1366,6 +1366,9 @@ export const MessageResponse = memo(
     );
     const responseClassName = cn(
       "size-full text-ui-base leading-[1.75] tracking-wide [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+      // // zcode-bidi: every MessageResponse consumer (chat, preview pane, plan sidebar, ...) goes through this one class
+      // // for per-block auto direction; the rules live in styles.css.
+      "zcode-bidi",
       className,
     );
     const fallbackClassName = cn(responseClassName, "whitespace-pre-wrap break-words");

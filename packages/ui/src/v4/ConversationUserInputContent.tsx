@@ -9,6 +9,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
+import { splitPartsIntoBidiLines } from "@/lib/bidiText.js";
 import { FileDisplayInline } from "@/lib/fileDisplay.js";
 import { isTrustedPluginIconSource } from "@/lib/pluginIconSource.js";
 import { usePluginReferenceIconProjection } from "@/v4/pluginReferenceIconContext.js";
@@ -192,34 +193,45 @@ export const ConversationUserInputContent = memo(function ConversationUserInputC
   const pluginIconProjection = usePluginReferenceIconProjection();
   const goalQuery = parseV4UserInputGoalQuery(text, attachments, contextAttachmentCount);
   const parts = parseMentionMarkdown(text);
-  const authoritativeGoalPartIndex = goalQuery
-    ? parts.findIndex(
+  const authoritativeGoalPart = goalQuery
+    ? parts.find(
         (part) =>
           part.type === "command" &&
           ["goal", "target"].includes(normalizeCommandMentionLabel(part.label)),
       )
-    : -1;
+    : undefined;
+  // After grouping by source line each line gets its own dir="auto": in mixed-language text every line takes direction from its first strong character,
+  // so Arabic lines read right-aligned while English lines are unaffected.
+  const lines = splitPartsIntoBidiLines(parts);
 
   return (
     <>
-      {parts.map((part, index) => {
-        if (part.type === "text") {
-          return part.text;
-        }
-
-        return (
-          <V4UserInputMention
-            key={`${part.type}-${index}`}
-            part={part}
-            authoritativeGoal={index === authoritativeGoalPartIndex}
-            pluginIcon={
-              part.type === "plugin" && part.pluginId
-                ? pluginIconProjection?.iconByPluginId.get(part.pluginId)
-                : undefined
+      {lines.map((line, lineIndex) => (
+        <span
+          key={lineIndex}
+          dir="auto"
+          className={cn("block", line.length === 0 && "min-h-[1lh]")}
+        >
+          {line.map((part, index) => {
+            if (part.type === "text") {
+              return part.text;
             }
-          />
-        );
-      })}
+
+            return (
+              <V4UserInputMention
+                key={`${part.type}-${index}`}
+                part={part}
+                authoritativeGoal={part === authoritativeGoalPart}
+                pluginIcon={
+                  part.type === "plugin" && part.pluginId
+                    ? pluginIconProjection?.iconByPluginId.get(part.pluginId)
+                    : undefined
+                }
+              />
+            );
+          })}
+        </span>
+      ))}
     </>
   );
 });
