@@ -17,6 +17,17 @@ ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. 
 
 - 2026-9-23: Updated to ZCode v3.14.3.
 
+## What this fork adds
+
+On top of upstream ZCode (design and verification notes in `docs/`):
+
+- **Browser relay for remote-attached sessions**: agent browser commands from remote sessions (Web / phone remote control) are relayed to the desktop host's embedded browser pane and executed there (CDP / WebContentsView), with results returned to the remote side. Gated to the trusted host relay connection, routed by `remoteSessionId`, and `node-repl-host` ships with the remote agent assets.
+- **Open in VM (agent-vm sandbox workspaces)**: Projects **+** → **Open folder in VM** creates/starts the project's dedicated agent-vm/Lima VM (pinned SSH port, banner-readiness wait, live boot logs), skips the SSH wizard, and opens the workspace at the same path. Reconnect boots a stopped VM in one click and re-reads the pinned port; the sidebar shows a VM state badge and a Stop VM action. The orchestration lives inside the app and maintains managed alias blocks in `~/.ssh/config`. See `docs/plan-open-in-vm.md`.
+- **VM resource specs**: first-create shows a host-budget panel (available memory as the kernel's MemAvailable) with optional memory / CPU / disk sizing; the sidebar's **VM settings…** re-creates the VM at a new size via `agent-vm --reset` and re-pins the port. See `docs/plan-vm-specs.md`.
+- Repo housekeeping: ignore tsup's transient bundled configs (`tsup.config.bundled_*.mjs`).
+
+The VM capability is built on open-source tools — thanks to [agent-vm](https://github.com/sylvinus/agent-vm) (by sylvinus) and [Lima](https://lima-vm.io). This repository ships its own in-app orchestration and does not modify agent-vm itself.
+
 ## Setup
 
 Install Git, Node.js **24.14.0**, and pnpm **10.33.2**. [mise.toml](mise.toml) is the source of truth for tool versions. Run all development and packaging commands below from the repository root.
