@@ -31,6 +31,14 @@ import type {
   UpdateCheckResultPayload,
   UpdateStatePayload,
 } from "./update.js";
+import type {
+  VmEnsureUpRequest,
+  VmEnsureUpResult,
+  VmRuntimeStatus,
+  VmRuntimeStatusRequest,
+  VmStopRequest,
+  VmStopResult,
+} from "./vmRuntime.js";
 export type {
   PostUpdateReleaseNotesPayload,
   UpdateCheckResultPayload,
@@ -612,6 +620,21 @@ export interface IPlatformService {
 
   /** 列出当前机器 SSH config 中可用于快速填表的 alias */
   listSSHConfigAliases(): Promise<SSHConfigAliasOption[]>;
+
+  /**
+   * 查询 agent-vm 沙箱 VM 状态（仅 Desktop：状态所有者是 main 的 vmRuntimeProvider）。
+   * Web/无 bridge 平台不实现；调用方应按“无 VM 支持”降级。
+   */
+  vmStatus?(request: VmRuntimeStatusRequest): Promise<VmRuntimeStatus>;
+
+  /**
+   * 确保某目录对应的 agent-vm VM 已启动（幂等），返回可连接 endpoint。
+   * 端口冲突可能让 pinned port 漂移，调用方必须用返回值覆写已持久化 target。
+   */
+  vmEnsureUp?(request: VmEnsureUpRequest): Promise<VmEnsureUpResult>;
+
+  /** 停止某目录对应的 agent-vm VM（端口保持 pin，下次 ensureUp 秒级恢复）。 */
+  vmStop?(request: VmStopRequest): Promise<VmStopResult>;
 
   /** 读取宿主环境中的原生 MCP 用户目录配置；手机远控通过已连接桌面 host 转发。 */
   loadMcpFromUserDirectory?(

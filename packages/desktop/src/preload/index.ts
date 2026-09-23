@@ -71,6 +71,12 @@ import type {
   PrintPageToPdfResult,
   SSHConfigAliasOption,
   RemoteConnectionRuntimeLog,
+  VmEnsureUpRequest,
+  VmEnsureUpResult,
+  VmRuntimeStatus,
+  VmRuntimeStatusRequest,
+  VmStopRequest,
+  VmStopResult,
   WindowControlsOverlayMetrics,
   WindowControlsOverlayReadyPayload,
   CreateTempTextAttachmentRequest,
@@ -276,6 +282,15 @@ contextBridge.exposeInMainWorld("zcode", {
   listDockerContainers: () => ipcRenderer.invoke(PlatformChannels.ListDockerContainers),
   listSSHConfigAliases: (): Promise<SSHConfigAliasOption[]> =>
     ipcRenderer.invoke(PlatformChannels.ListSSHConfigAliases),
+  /** 查询 agent-vm 沙箱 VM 状态（main 的 vmRuntimeProvider 是唯一状态源） */
+  vmStatus: (payload: VmRuntimeStatusRequest): Promise<VmRuntimeStatus> =>
+    ipcRenderer.invoke(PlatformChannels.VmStatus, payload),
+  /** 确保 agent-vm 沙箱 VM 已启动；日志经 RemoteConnectionLog 按 requestId 回流 */
+  vmEnsureUp: (payload: VmEnsureUpRequest): Promise<VmEnsureUpResult> =>
+    ipcRenderer.invoke(PlatformChannels.VmEnsureUp, payload),
+  /** 停止 agent-vm 沙箱 VM（端口保持 pin） */
+  vmStop: (payload: VmStopRequest): Promise<VmStopResult> =>
+    ipcRenderer.invoke(PlatformChannels.VmStop, payload),
   loadMcpFromUserDirectory: (payload?: LoadCliMcpFromUserDirectoryRequest) =>
     ipcRenderer.invoke(PlatformChannels.LoadMcpFromUserDirectory, payload ?? {}),
   saveMcpToUserDirectory: (payload: SaveCliMcpToUserDirectoryRequest) =>

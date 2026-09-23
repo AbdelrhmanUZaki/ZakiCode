@@ -80,6 +80,12 @@ export const sshConnectOptionsSchema = z.object({
       selectedPackageIds: z.array(z.string().refine(isKnownRemoteResourcePackageId)).optional(),
     })
     .optional(),
+  vm: z
+    .object({
+      provider: z.literal("agent-vm"),
+      vmName: nonEmptyStringSchema,
+    })
+    .optional(),
 });
 
 export const wslConnectOptionsSchema = z.object({

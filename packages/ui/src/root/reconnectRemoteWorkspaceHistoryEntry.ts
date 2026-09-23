@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { IPlatformService, RemoteWorkspaceSessionEntry } from "@zcode/shared";
-import { stripRemoteTargetSecrets } from "@zcode/shared";
+import { isVmBackedRemoteTarget, stripRemoteTargetSecrets } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
 import { toast } from "@/components/ui/toast.js";
 import {
@@ -9,6 +9,7 @@ import {
   createRemoteTargetFromSnapshot,
   resolveRemoteWorkspaceSessionIdentity,
 } from "@/lib/remoteWorkspaceHistory.js";
+import { ensureVmRuntimeForRemoteTarget } from "@/lib/vmRuntime.js";
 import { logger } from "@/logger.js";
 import {
   bindRemoteWorkspaceIdentity,
@@ -29,6 +30,7 @@ type ManualReconnectRemoteWorkspaceParams = {
   activateTabByPath: (workspacePath: string, options?: { workspaceIdentity?: string }) => boolean;
   setReconnectingRemoteWorkspaceKeys: Dispatch<SetStateAction<string[]>>;
   loadCredential: IServiceAccessor["credentialService"]["load"];
+  vmEnsureUp?: IPlatformService["vmEnsureUp"];
   connectRemoteWorkspaceTarget: (
     target: Parameters<IPlatformService["connectRemote"]>[0],
     requestId?: string,
@@ -85,6 +87,7 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
   activateTabByPath,
   setReconnectingRemoteWorkspaceKeys,
   loadCredential,
+  vmEnsureUp,
   connectRemoteWorkspaceTarget,
   resolveRemoteWorkspaceCanonicalPath,
   disposeRemoteWorkspaceSession,
@@ -129,6 +132,16 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
           : null,
     };
     reconnectTarget = createRemoteTargetFromSnapshot(sessionEntry.target, sshCredentials);
+    if (isVmBackedRemoteTarget(reconnectTarget)) {
+      // VM-backed workspace: reconnect starts the VM on demand (constraint: no bulk auto-start); the port comes from the provider's
+      // read-back value (collisions can move it), and the refreshed target is persisted with the entry afterwards.
+      reconnectTarget = await ensureVmRuntimeForRemoteTarget({
+        vmEnsureUp,
+        target: reconnectTarget,
+        workspacePath: sessionEntry.workspacePath,
+        requestId: options?.requestId,
+      });
+    }
     const sessionId = await connectRemoteWorkspaceTarget(reconnectTarget, options?.requestId, {
       workspacePath: sessionEntry.workspacePath,
       workspaceIdentity: fallbackWorkspaceIdentity,

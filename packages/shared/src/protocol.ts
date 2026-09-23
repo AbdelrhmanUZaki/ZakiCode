@@ -5,6 +5,7 @@ import type { ProviderFamilyConnectionSelectionSettings } from "./provider-famil
 import type { ZCodeProvider } from "./zcode-task-types-core.js";
 import type { WorkspacePurpose } from "./workspacePurpose.js";
 import type { EmbeddedBrowserViewportPreference } from "./browser-use/command-metadata.js";
+import type { RemoteVmTargetInfo } from "./vmRuntime.js";
 
 // ── Domain types ──
 
@@ -143,6 +144,8 @@ export interface SSHRemoteTargetSnapshot {
    * 这里只保存 credentialService 的键名，恢复时再去安全存储读取真实口令。
    */
   privateKeyPassphraseCredentialKey?: string;
+  /** Set when backed by a local agent-vm VM; ensureUp overwrites the port with the refreshed value before reconnecting. */
+  vm?: RemoteVmTargetInfo;
 }
 
 export interface WSLRemoteTargetSnapshot {

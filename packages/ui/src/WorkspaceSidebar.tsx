@@ -14,6 +14,7 @@ import {
 import {
   Archive,
   Blocks,
+  Box,
   CalendarClock,
   Clock3,
   Cloud,
@@ -233,6 +234,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onCreateConversationTask,
   onOpenFolderFromWorkspaceMenu,
   onOpenRemoteWorkspace,
+  onOpenVmWorkspace,
   theme,
   onConnectRemote: _onConnectRemote,
   onSelectRemoteProject: _onSelectRemoteProject,
@@ -281,6 +283,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onCreateConversationTask: () => void;
   onOpenFolderFromWorkspaceMenu: () => void;
   onOpenRemoteWorkspace?: () => void;
+  onOpenVmWorkspace?: () => void;
   theme: Theme;
   onConnectRemote: (options: RemoteTarget, requestId?: string) => Promise<string>;
   onSelectRemoteProject: (
@@ -1480,6 +1483,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                         <Cloud className="size-4" />
                                         {intl.formatMessage({
                                           id: "remote.trigger",
+                                        })}
+                                      </DropdownMenuItem>
+                                    ) : null}
+                                    {onOpenVmWorkspace ? (
+                                      <DropdownMenuItem onSelect={onOpenVmWorkspace}>
+                                        <Box className="size-4" />
+                                        {intl.formatMessage({
+                                          id: "workspace.openInVm",
                                         })}
                                       </DropdownMenuItem>
                                     ) : null}

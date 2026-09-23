@@ -96,6 +96,8 @@ export interface AppProps {
   onOpenWorkspace: () => void;
   onOpenFolderFromWorkspaceMenu: () => void;
   onOpenRemoteWorkspace?: () => void;
+  /** Open-in-VM entry: pick a host directory → agent-vm ensureUp → connect (passed only by platforms offering vmEnsureUp). */
+  onOpenVmWorkspace?: () => void;
   onCreateScratchWorkspace: (name: string) => Promise<string | null>;
   remoteConnectionInProgress?: boolean;
   onReturnToWorkspace?: () => void;

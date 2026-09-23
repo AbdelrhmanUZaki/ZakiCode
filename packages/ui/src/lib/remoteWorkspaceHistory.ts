@@ -200,6 +200,8 @@ function createRemoteTargetSnapshot(
               ? previousSnapshot.privateKeyPassphraseCredentialKey
               : buildRemoteWorkspacePrivateKeyPassphraseCredentialKey(workspaceKey)
             : undefined,
+        // The vm marker must be persisted with the snapshot: reconnect uses it to decide whether to ensureUp before connecting.
+        vm: target.vm,
       };
     case "wsl": {
       const user = target.user?.trim();
@@ -234,6 +236,7 @@ export function createRemoteTargetFromSnapshot(
         ...(snapshot.sshConfigAlias ? { sshConfigAlias: snapshot.sshConfigAlias } : {}),
         ...(snapshot.assetInstallMode ? { assetInstallMode: snapshot.assetInstallMode } : {}),
         ...(snapshot.privateKeyPath ? { privateKeyPath: snapshot.privateKeyPath } : {}),
+        ...(snapshot.vm ? { vm: snapshot.vm } : {}),
         ...(credentials.password ? { password: credentials.password } : {}),
         ...(credentials.privateKeyPassphrase
           ? { privateKeyPassphrase: credentials.privateKeyPassphrase }

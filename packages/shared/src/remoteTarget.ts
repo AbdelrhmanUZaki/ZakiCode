@@ -1,5 +1,6 @@
 import type { RemoteAssetInstallMode } from "./remoteAssetInstallMode.js";
 import type { RemoteResourcePackageSelection } from "./remoteResourcePackages.js";
+import type { RemoteVmTargetInfo } from "./vmRuntime.js";
 
 export interface SSHConnectOptions {
   kind: "ssh";
@@ -12,6 +13,8 @@ export interface SSHConnectOptions {
   privateKeyPassphrase?: string;
   assetInstallMode?: RemoteAssetInstallMode;
   resourcePackages?: RemoteResourcePackageSelection;
+  /** Set when the target is backed by a local agent-vm VM; reconnect runs ensureUp first and refreshes the port. */
+  vm?: RemoteVmTargetInfo;
 }
 
 export interface WSLConnectOptions {

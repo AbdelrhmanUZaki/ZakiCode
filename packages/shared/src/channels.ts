@@ -66,6 +66,14 @@ import type {
   OpenCuaPermissionOnboardingOptions,
   PrepareCuaHelperPermissionDragResult,
 } from "./cuaAccessibilitySettings.js";
+import type {
+  VmEnsureUpRequest,
+  VmEnsureUpResult,
+  VmRuntimeStatus,
+  VmRuntimeStatusRequest,
+  VmStopRequest,
+  VmStopResult,
+} from "./vmRuntime.js";
 
 // ============================================================================
 // RPC 服务频道 —— 通过 ChannelServer/ChannelClient 传输
@@ -195,6 +203,12 @@ export const PlatformChannels = {
   ListDockerContainers: "zcode:list-docker-containers",
   /** Renderer → Main：列出 SSH config 里可用于快速填表的 alias */
   ListSSHConfigAliases: "zcode:list-ssh-config-aliases",
+  /** Renderer → Main：查询 agent-vm 沙箱 VM 状态（便宜，可轮询） */
+  VmStatus: "zcode:vm-status",
+  /** Renderer → Main：确保 agent-vm 沙箱 VM 已启动（幂等），返回可连接 endpoint；端口以读回值为准 */
+  VmEnsureUp: "zcode:vm-ensure-up",
+  /** Renderer → Main：停止 agent-vm 沙箱 VM（端口保持 pin） */
+  VmStop: "zcode:vm-stop",
   /** Renderer → Main：从用户目录加载 CLI MCP 配置 */
   LoadMcpFromUserDirectory: "zcode:load-mcp-from-user-directory",
   /** Renderer → Main：保存 CLI MCP 配置到用户目录 */
@@ -751,6 +765,18 @@ export interface PlatformChannelMap {
   [PlatformChannels.ListSSHConfigAliases]: {
     request: void;
     response: SSHConfigAliasOption[];
+  };
+  [PlatformChannels.VmStatus]: {
+    request: VmRuntimeStatusRequest;
+    response: VmRuntimeStatus;
+  };
+  [PlatformChannels.VmEnsureUp]: {
+    request: VmEnsureUpRequest;
+    response: VmEnsureUpResult;
+  };
+  [PlatformChannels.VmStop]: {
+    request: VmStopRequest;
+    response: VmStopResult;
   };
   [PlatformChannels.LoadMcpFromUserDirectory]: {
     request: LoadCliMcpFromUserDirectoryRequest;

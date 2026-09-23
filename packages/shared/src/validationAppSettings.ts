@@ -89,6 +89,12 @@ const remoteWorkspaceTargetSchema = z.discriminatedUnion("kind", [
       .optional(),
     passwordCredentialKey: nonEmptyStringSchema.optional(),
     privateKeyPassphraseCredentialKey: nonEmptyStringSchema.optional(),
+    vm: z
+      .object({
+        provider: z.literal("agent-vm"),
+        vmName: nonEmptyStringSchema,
+      })
+      .optional(),
   }),
   z.object({
     kind: z.literal("wsl"),

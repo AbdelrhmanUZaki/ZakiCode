@@ -1604,6 +1604,7 @@ const enUS: Record<string, string> = {
   "workspace.addNewWorkspace": "Add new workspace",
   "workspace.startFromScratch": "Start from scratch",
   "workspace.openFolder": "Open folder",
+  "workspace.openInVm": "Open folder in VM",
   "workspace.openPluginsSettings": "Plugin Marketplace",
   "workspace.backToWorkspace": "Back to workspace",
   "workspace.noActiveForNewTask": "There is no available workspace yet. Open a workspace first.",
@@ -1644,6 +1645,19 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.windowsReservedNameRisk":
     "Project removed, but {count} Windows reserved-name file(s) were detected and may affect later folder deletion or renaming: {path}",
   "workspaceSidebar.reconnect": "Reconnect",
+  "workspaceSidebar.stopVm": "Stop VM",
+  "vm.state.running": "VM running",
+  "vm.state.stopped": "VM stopped",
+  "vm.state.starting": "VM starting",
+  "vm.stop": "Stop",
+  "vm.stopConfirmTitle": "Stop this project VM?",
+  "vm.stopConfirmDescription":
+    "The sandbox VM will be stopped to free its memory and CPUs. The workspace stays in the list and reconnecting starts it again.",
+  "vm.stopped": "VM stopped (the pinned port is kept)",
+  "vm.stopFailed": "Failed to stop the VM",
+  "vm.runtime.unavailable":
+    "VM support is not available on this machine (agent-vm + Lima required).",
+  "vm.runtime.bootFailed": "Failed to start the project VM",
   "workspaceSidebar.connecting": "Connecting",
   "workspaceSidebar.notConnected": "Not connected",
   "workspaceSidebar.empty": "No workspaces yet. Open a workspace to get started.",

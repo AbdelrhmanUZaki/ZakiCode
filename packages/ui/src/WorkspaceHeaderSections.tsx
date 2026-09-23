@@ -5,6 +5,7 @@ import {
   TID_WORKSPACE_MORE_BUTTON,
   TID_WORKSPACE_PATH,
   TID_WORKSPACE_TITLE,
+  isVmBackedRemoteTarget,
   type RemoteTarget,
   type ZCodeTaskMeta,
 } from "@zcode/shared";
@@ -12,7 +13,7 @@ import { useMemo, useRef, useState } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
-import { Cloud, Ellipsis, Folder, GitBranch, LoaderIcon } from "lucide-react";
+import { Box, Cloud, Ellipsis, Folder, GitBranch, LoaderIcon } from "lucide-react";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
 import { useBaseWorkspaceServices, useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
@@ -201,6 +202,9 @@ export function WorkspaceHeaderTitleSection({
   const isRemoteWorkspace = Boolean(
     remoteWorkspaceHostLabel || workspaceIdentity?.trim() || remoteSessionId,
   );
+  // // Same VM recognition as the sidebar: VM-backed remote workspaces show a cube instead of a cloud so the
+  // // header tells isolated-VM workspaces apart from ordinary remote machines at a glance.
+  const isVmBackedWorkspace = Boolean(remoteTarget && isVmBackedRemoteTarget(remoteTarget));
   const showRemoteSkillSyncAction = shouldShowRemoteSkillSyncAction({
     remoteSessionId,
     remoteTarget,
@@ -415,7 +419,9 @@ export function WorkspaceHeaderTitleSection({
               className="flex w-full min-w-0 flex-col gap-3 text-left"
             >
               <span className="flex min-w-0 items-start gap-2">
-                {isRemoteWorkspace ? (
+                {isVmBackedWorkspace ? (
+                  <Box className="size-4 shrink-0" />
+                ) : isRemoteWorkspace ? (
                   <Cloud className="size-4 shrink-0" />
                 ) : (
                   <Folder className="size-4 shrink-0" />
@@ -457,7 +463,9 @@ export function WorkspaceHeaderTitleSection({
             aria-label={[workspaceContextLabel, workspaceBranchLabel].filter(Boolean).join(" · ")}
             onClick={() => setWorkspaceContextOpen(true)}
           >
-            {isRemoteWorkspace ? (
+            {isVmBackedWorkspace ? (
+              <Box className="size-4 text-foreground-subtle" />
+            ) : isRemoteWorkspace ? (
               <Cloud className="size-4 text-foreground-subtle" />
             ) : (
               <Folder className="size-4 text-foreground-subtle" />

@@ -88,6 +88,8 @@ const DEFAULT_LUCIDE_STROKE_WIDTH = 1.5;
 interface RemoteConnectionOpenPreference {
   preferredKind?: RemoteTarget["kind"];
   preferredWslDistro?: string;
+  /** Use agent-vm VM mode: ensureUp → connect → auto-select the workspace at the same path (wizard skipped). */
+  vmWorkspacePath?: string;
 }
 
 type WelcomeScreenOpenReason =
@@ -480,6 +482,18 @@ function RootInner({
     setRemoteConnectionOpenPreference(preference ?? null);
     setRemoteConnectionDialogOpen(true);
   }, []);
+  const handleOpenVmWorkspace = useCallback(() => {
+    if (!platform.selectDirectory) {
+      return;
+    }
+    // // Open-in-VM entry: pick the host directory first, then hand off to SSHDialog's VM-mode boot+connect.
+    void platform.selectDirectory().then((directory) => {
+      if (!directory) {
+        return;
+      }
+      handleOpenRemoteConnection({ vmWorkspacePath: directory });
+    });
+  }, [handleOpenRemoteConnection, platform]);
   const handleOpenDirectoryBrowser = useCallback(() => {
     setDirectoryBrowserOpen(true);
   }, []);
@@ -922,6 +936,7 @@ function RootInner({
       onFlowRequestIdChange={setRemoteConnectionRequestId}
       preferredKind={remoteConnectionOpenPreference?.preferredKind}
       preferredWslDistro={remoteConnectionOpenPreference?.preferredWslDistro}
+      vmWorkspacePath={remoteConnectionOpenPreference?.vmWorkspacePath ?? null}
       hideTriggerWhenClosed
     />
   ) : null;
@@ -1050,6 +1065,9 @@ function RootInner({
             handleOpenFolderFromWorkspaceMenu={handleOpenFolderFromWorkspaceMenu}
             handleOpenRemoteWorkspace={
               allowRemoteWorkspace ? handleOpenRemoteConnection : undefined
+            }
+            handleOpenVmWorkspace={
+              allowRemoteWorkspace && platform.vmEnsureUp ? handleOpenVmWorkspace : undefined
             }
             handleCreateScratchWorkspace={handleCreateScratchWorkspace}
             remoteConnectionInProgress={remoteConnectionInProgress}

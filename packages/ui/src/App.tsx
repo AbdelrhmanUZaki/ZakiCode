@@ -108,6 +108,7 @@ export function App({
   onOpenWorkspace,
   onOpenFolderFromWorkspaceMenu,
   onOpenRemoteWorkspace,
+  onOpenVmWorkspace,
   onCreateScratchWorkspace,
   remoteConnectionInProgress = false,
   onReturnToWorkspace,
@@ -1153,6 +1154,7 @@ export function App({
         onOpenWorkspace={onOpenWorkspace}
         onOpenFolderFromWorkspaceMenu={onOpenFolderFromWorkspaceMenu}
         onOpenRemoteWorkspace={onOpenRemoteWorkspace}
+        onOpenVmWorkspace={onOpenVmWorkspace}
         onCreateScratchWorkspace={onCreateScratchWorkspace}
         remoteConnectionInProgress={remoteConnectionInProgress}
         allowOpenWorkspace={allowOpenWorkspace}
