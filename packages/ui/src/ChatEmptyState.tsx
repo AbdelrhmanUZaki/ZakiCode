@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu.js";
 import { InputGroup, InputGroupAddon } from "@/components/ui/input-group.js";
 import {
+  Box,
   ChevronDownIcon,
   Cloud,
   Folder,
@@ -41,6 +42,7 @@ import {
   TID_COMPOSER_REMOTE_CONNECTION,
   TID_COMPOSER_WORK_OUTSIDE_PROJECT,
   TID_COMPOSER_WORKSPACE_TRIGGER,
+  isVmBackedRemoteTarget,
   resolveWorkspaceKey,
   type RemoteTarget,
   type RemoteWorkspaceSessionEntry,
@@ -105,6 +107,23 @@ function isWorkspaceMenuTabSelected(
   current: { workspacePath: string; workspaceIdentity?: string },
 ): boolean {
   return resolveWorkspaceKey(workspaceTab) === resolveWorkspaceKey(current);
+}
+
+// // Icon priority matches the sidebar's renderWorkspaceIcon: VM-backed workspaces show a Box (cube),
+// // other remotes show a Cloud, and home/plain directories differ. The chat chip and the sidebar must agree for the same workspace.
+function getWorkspaceMenuIcon(
+  workspaceTab: Pick<ChatEmptyWorkspaceMenuTab, "workspacePath" | "remoteTarget">,
+  isRemoteWorkspace: boolean,
+) {
+  if (workspaceTab.remoteTarget && isVmBackedRemoteTarget(workspaceTab.remoteTarget)) {
+    return Box;
+  }
+  if (isRemoteWorkspace) {
+    return Cloud;
+  }
+  return inferWorkspaceHomePath(workspaceTab.workspacePath) === workspaceTab.workspacePath
+    ? House
+    : Folder;
 }
 
 function getRemoteWorkspaceSearchText(workspaceTab: ChatEmptyWorkspaceMenuTab) {
@@ -239,7 +258,6 @@ export function ChatEmptyWorkspacePreviewMenu({
     currentWorkspaceTab?.workspaceIdentity
       ? undefined
       : workspacePath;
-  const homeWorkspacePath = inferWorkspaceHomePath(workspacePath);
   const homeWorkspaceLabel = intl.formatMessage({ id: "chat.empty.home" });
   const isCurrentRemoteWorkspace = hasRemoteWorkspaceIdentity(currentWorkspaceTab ?? {});
   const visibleWorkspaceTabs = useMemo(
@@ -256,11 +274,10 @@ export function ChatEmptyWorkspacePreviewMenu({
   const currentWorkspaceTitle = isConversationWorkspace
     ? intl.formatMessage({ id: "chat.empty.selectProject" })
     : getWorkspaceTriggerTitle(workspacePath, homeWorkspaceLabel);
-  const CurrentWorkspaceIcon = isCurrentRemoteWorkspace
-    ? Cloud
-    : homeWorkspacePath === workspacePath
-      ? House
-      : Folder;
+  const CurrentWorkspaceIcon = getWorkspaceMenuIcon(
+    currentWorkspaceTab ?? { workspacePath },
+    isCurrentRemoteWorkspace,
+  );
 
   return (
     <DropdownMenu>
@@ -350,11 +367,7 @@ export function ChatEmptyWorkspacePreviewMenu({
               homeWorkspaceLabel,
             );
             const isRemoteWorkspace = hasRemoteWorkspaceIdentity(workspaceTab);
-            const WorkspaceIcon = isRemoteWorkspace
-              ? Cloud
-              : inferWorkspaceHomePath(workspaceTab.workspacePath) === workspaceTab.workspacePath
-                ? House
-                : Folder;
+            const WorkspaceIcon = getWorkspaceMenuIcon(workspaceTab, isRemoteWorkspace);
 
             return (
               <DropdownMenuCheckboxItem
