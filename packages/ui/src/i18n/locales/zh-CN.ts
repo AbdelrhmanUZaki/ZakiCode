@@ -1651,6 +1651,10 @@ const zhCN: Record<string, string> = {
     "内存可用 {available} / {total} GB · {cpus} 个 CPU · 磁盘剩余 {disk} GB",
   "vm.specs.runningVmsNote": "{count} 个运行中的 VM 已占用 {memory} GB 内存",
   "vm.specs.defaultsSummary": "默认规格：3 GB 内存 · 1 CPU · 10 GB 磁盘",
+  "vm.template.requiredTitle": "需要先构建基础镜像（本机一次性）",
+  "vm.template.requiredDescription":
+    "启动时会先构建基础镜像（约 10 分钟），预装默认工具集；之后所有项目 VM 都从它克隆。仅此一次。",
+  "vm.template.building": "正在构建基础镜像…",
   "vm.specs.customize": "自定义资源",
   "vm.specs.memory": "内存",
   "vm.specs.cpus": "CPU 数",

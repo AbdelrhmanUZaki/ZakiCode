@@ -17,11 +17,14 @@ import { cn } from "@/components/lib/utils.js";
 export function RemoteConnectionVmSpecStep({
   workspacePath,
   hostResources,
+  templateReady = true,
   onStart,
   onCancel,
 }: {
   workspacePath: string;
   hostResources: VmHostResources;
+  /** 基础镜像缺失时显示一次性构建提示；Start 会先自动构建再创建。 */
+  templateReady?: boolean;
   onStart: (spec: VmResourceSpec) => void;
   onCancel: () => void;
 }) {
@@ -109,6 +112,25 @@ export function RemoteConnectionVmSpecStep({
           {intl.formatMessage({ id: "vm.specs.defaultsSummary" })}
         </div>
       </div>
+
+      {!templateReady ? (
+        // 首台机器引导：缺基础镜像时提前说明（一次性构建，之后所有项目 VM
+        // 都从它克隆）；Start 仍是一个按钮，构建过程流式进连接日志。
+        <div
+          data-testid="vm-template-required"
+          className="flex items-start gap-2 rounded-xl bg-warning/10 px-4 py-3 text-ui-sm text-warning"
+        >
+          <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+          <div className="min-w-0">
+            <div>
+              {intl.formatMessage({ id: "vm.template.requiredTitle" })}
+            </div>
+            <div className="mt-0.5">
+              {intl.formatMessage({ id: "vm.template.requiredDescription" })}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-border">
         <button

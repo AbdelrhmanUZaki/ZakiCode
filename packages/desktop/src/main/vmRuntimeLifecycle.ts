@@ -26,6 +26,9 @@ export const VM_CREATE_TIMEOUT_MS = 15 * 60_000;
 export const VM_START_TIMEOUT_MS = 3 * 60_000;
 export const VM_STOP_TIMEOUT_MS = 3 * 60_000;
 export const VM_FAST_TIMEOUT_MS = 30_000;
+/** 基础镜像构建要下载发行版镜像并跑 cloud-init，再安装默认工具集与各 agent CLI；
+ * 实测全量 ~29 分钟（快网络也不止 README 的 ~10 分钟），给 45 分钟上限避免误杀。 */
+export const VM_TEMPLATE_TIMEOUT_MS = 45 * 60_000;
 const PORT_READ_BACK_RETRIES = 5;
 const PORT_READ_BACK_RETRY_DELAY_MS = 1_000;
 const SSH_ENDPOINT_WAIT_TIMEOUT_MS = 90_000;
@@ -77,6 +80,48 @@ export async function resolveVmName(workspacePath: string): Promise<string> {
     throw new Error(describeCommandFailure("agent-vm name", result));
   }
   return name;
+}
+
+/** 基础镜像是否存在（agent-vm info 的机器可读字段 base_exists）。
+ * 查询失败按已就绪处理：让后续 create 分支的原始错误浮现，而不是把
+ * 探测失败误报成“缺模板”。 */
+export async function readBaseTemplateExists(
+  workspacePath: string,
+): Promise<boolean> {
+  const result = await runAgentVm(["info", workspacePath], {
+    cwd: workspacePath,
+    timeoutMs: VM_FAST_TIMEOUT_MS,
+  });
+  if (result.code !== 0) {
+    return true;
+  }
+  return /^base_exists=1$/m.test(result.stdout);
+}
+
+/** 首台机器自动引导：缺基础镜像时先 `agent-vm setup`（stdin 非 TTY，
+ * agent-vm 自动跳过向导并安装默认工具集），输出流式进同一日志面板。
+ * 对已存在的模板是廉价 no-op 重查。 */
+export async function ensureBaseTemplate(
+  workspacePath: string,
+  onLog: VmRuntimeLogLine,
+): Promise<void> {
+  if (await readBaseTemplateExists(workspacePath)) {
+    return;
+  }
+  onLog(
+    "==> Building base image (one-time, ~10 min; installs the default tool set)",
+  );
+  const result = await runAgentVm(["setup"], {
+    cwd: workspacePath,
+    timeoutMs: VM_TEMPLATE_TIMEOUT_MS,
+    onLog,
+  });
+  if (result.code !== 0) {
+    throw new Error(
+      describeCommandFailure("agent-vm setup (base image)", result),
+    );
+  }
+  onLog("==> Base image ready");
 }
 
 /** agent-vm 的 VM 选项是命令前的全局旗标；只拼调用方显式提供的字段，缺省即默认。 */
@@ -217,6 +262,9 @@ export async function ensureUpSequence(
 ): Promise<VmEnsureUpResult> {
   const { vmName, alias, hashSegment } = identity;
   if (!facts.exists) {
+    // 首次创建前的自动引导：没有基础镜像先构建（一次性），否则 create 会以
+    // 原始错误失败——这是“最后一处必须开终端”的场景。
+    await ensureBaseTemplate(workspacePath, onLog);
     onLog(
       `==> Creating VM '${vmName}' with ${describeVmSpec(spec ?? {})} (first run clones the base template; this can take minutes)`,
     );

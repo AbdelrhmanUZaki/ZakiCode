@@ -133,8 +133,10 @@ export function RemoteConnectionDialog({
   // 记录上一次已启动 boot 的目录；变化即视为新流程，强制备位 vmFlowStartedRef。
   const vmStartedPathRef = useRef<string | null>(null);
   // 首次创建的规格面板数据；非空时 connecting 步骤渲染面板而非日志流。
+  // templateReady 来自 vmStatus（机器级事实）：缺基础镜像时面板给出一次性构建提示。
   const [vmSpecPanel, setVmSpecPanel] = useState<{
     hostResources: VmHostResources;
+    templateReady: boolean;
   } | null>(null);
   // 面板确认过的规格：boot 失败重试时沿用，不再重新询问。
   const lastVmSpecRef = useRef<VmResourceSpec | undefined>(undefined);
@@ -474,7 +476,10 @@ export function RemoteConnectionDialog({
         const hostResources = await platform.vmHostResources();
         // 面板等待用户决定，必须先解除 loading，否则 Start 会被并发保护拦下。
         setLoading(false);
-        setVmSpecPanel({ hostResources });
+        setVmSpecPanel({
+          hostResources,
+          templateReady: status.templateReady ?? true,
+        });
         return;
       }
     } catch {
@@ -764,6 +769,7 @@ export function RemoteConnectionDialog({
                   <RemoteConnectionVmSpecStep
                     workspacePath={vmWorkspacePath ?? ""}
                     hostResources={vmSpecPanel.hostResources}
+                    templateReady={vmSpecPanel.templateReady}
                     onStart={(spec) => {
                       lastVmSpecRef.current = spec;
                       if (vmWorkspacePath) {

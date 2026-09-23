@@ -64,6 +64,8 @@ export interface VmRuntimeStatus {
   memoryGb?: number;
   cpus?: number;
   diskGb?: number;
+  /** 基础镜像是否就绪（机器级事实，仅在 VM 不存在时探测）；缺镜像时首次创建前会自动构建。 */
+  templateReady?: boolean;
 }
 
 /** 宿主资源快照：availableMemoryGb 取内核 MemAvailable（已排除不可回收页）；

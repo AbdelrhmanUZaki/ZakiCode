@@ -22,7 +22,7 @@ ZakiCode 是 ZCode 的个人分支（得名自作者 Abdelrahman Zaki），聚�
 相对上游 ZCode，本分支新增（设计与验证记录见 `docs/`）：
 
 - **远程会话浏览器中继**：远程附加会话（Web / 手机远控）中 Agent 的浏览器命令中继到桌面宿主的内置浏览器 pane 执行（CDP / WebContentsView），结果回传远端；仅信任宿主 relay 连接，命令按 `remoteSessionId` 路由，`node-repl-host` 随远程 Agent 资产下发。
-- **Open in VM（agent-vm 沙箱工作区）**：Projects **+** → **Open folder in VM** 自动创建/启动项目专属 agent-vm/Lima VM（SSH 端口 pin、banner 就绪等待、启动日志实时展示），跳过 SSH 向导并以同路径打开工作区；Reconnect 一键拉起已停止的 VM 并回读 pin 端口；侧栏提供 VM 状态徽章与 Stop VM。编排逻辑内置于应用内，并在 `~/.ssh/config` 维护受管 alias 块。见 `docs/plan-open-in-vm.md`。
+- **Open in VM（agent-vm 沙箱工作区）**：Projects **+** → **Open folder in VM** 自动创建/启动项目专属 agent-vm/Lima VM（缺基础镜像时先自动构建，SSH 端口 pin、banner 就绪等待、启动日志实时展示），跳过 SSH 向导并以同路径打开工作区；Reconnect 一键拉起已停止的 VM 并回读 pin 端口；侧栏提供 VM 状态徽章与 Stop VM。编排逻辑内置于应用内，并在 `~/.ssh/config` 维护受管 alias 块。见 `docs/plan-open-in-vm.md`。
 - **VM 资源规格**：首次创建 VM 前展示宿主真实余量（可用内存按内核 MemAvailable 口径），可自定义 memory / CPU / disk；侧栏 **VM settings…** 以 `agent-vm --reset` 重克隆应用新规格并重新 pin 端口。见 `docs/plan-vm-specs.md`。
 - 仓库维护：忽略 tsup 运行期生成的临时打包配置（`tsup.config.bundled_*.mjs`）。
 

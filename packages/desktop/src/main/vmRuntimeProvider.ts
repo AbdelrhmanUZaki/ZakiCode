@@ -30,12 +30,12 @@ import {
   deriveVmAlias,
   ensureUpSequence,
   mapLimaStatusToVmState,
+  readBaseTemplateExists,
   reconfigureSequence,
   resolveVmName,
   runAgentVm,
   type VmRuntimeLogLine,
 } from "./vmRuntimeLifecycle.js";
-
 interface Availability {
   agentVm: boolean;
   limactl: boolean;
@@ -195,6 +195,21 @@ async function reconfigure(
   );
 }
 
+/** 基础镜像就绪查询（机器级事实）：30 s 缓存，避免面板每次打开都起子进程。 */
+let templateReadyCache: { value: boolean; checkedAt: number } | null = null;
+
+async function templateReady(workspacePath: string): Promise<boolean> {
+  if (
+    templateReadyCache &&
+    Date.now() - templateReadyCache.checkedAt < 30_000
+  ) {
+    return templateReadyCache.value;
+  }
+  const value = await readBaseTemplateExists(workspacePath);
+  templateReadyCache = { value, checkedAt: Date.now() };
+  return value;
+}
+
 async function status(workspacePath: string): Promise<VmRuntimeStatus> {
   const availability = await checkVmTooling();
   const unavailabilityReason = resolveUnavailability(availability);
@@ -217,12 +232,18 @@ async function status(workspacePath: string): Promise<VmRuntimeStatus> {
     (entry) => entry.name === identity.vmName,
   );
   const state = mapLimaStatusToVmState(instance?.status);
+  // 面板只在“VM 不存在”时关心模板；其余状态跳过这次子进程查询。
+  const needsTemplateProbe = !instance || state === "none";
+  const templateReadyValue = needsTemplateProbe
+    ? await templateReady(workspacePath).catch(() => true)
+    : true;
   if (!instance || state === "none") {
     return {
       available: true,
       state: "none",
       vm: identity.vmName,
       alias: identity.alias,
+      templateReady: templateReadyValue,
     };
   }
   const port = await readPinnedPort(identity.vmName);

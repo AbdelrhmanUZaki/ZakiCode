@@ -1752,6 +1752,10 @@ const enUS: Record<string, string> = {
   "vm.specs.runningVmsNote":
     "{count} running VM(s) holding {memory} GB of committed memory",
   "vm.specs.defaultsSummary": "Default size: 3 GB RAM · 1 CPU · 10 GB disk",
+  "vm.template.requiredTitle": "Base image required (built once on this machine)",
+  "vm.template.requiredDescription":
+    "Starting will build the base image first (~10 min) with the default tool set preinstalled; afterwards every project VM clones it. This happens only once.",
+  "vm.template.building": "Building base image…",
   "vm.specs.customize": "Customize resources",
   "vm.specs.memory": "Memory",
   "vm.specs.cpus": "CPUs",
