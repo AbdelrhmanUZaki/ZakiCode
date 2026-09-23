@@ -260,6 +260,13 @@ Markdown rendered through the shared assistant response uses a reading-oriented 
 - Respect i18n expansion. Do not hard-code layouts that only work for short English labels.
 - Do not depend on tight truncation as the only way a component survives translation.
 
+### Text direction (bidi)
+
+- Chat content auto-detects direction per text block (`unicode-bidi: plaintext`, see `docs/specs/ui-text-direction.md`): a block whose first strong character is RTL renders right-to-left. Do not add manual direction toggles or locale-based direction assumptions on top.
+- Code, diffs, terminal output, and other monospace content always stay LTR — never extend auto-direction rules to them.
+- Alignment for content text uses `start`, never hardcoded `left`/`right`, so it follows resolved direction.
+- Plain-text renderers split source lines with `splitPartsIntoBidiLines` (`packages/ui/src/lib/bidiText.ts`) and give each line `dir="auto"`.
+
 ## Spacing
 
 Base spacing unit is `4px`.
