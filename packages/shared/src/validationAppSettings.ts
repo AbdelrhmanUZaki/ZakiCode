@@ -32,6 +32,17 @@ export const appSettingsOccupationEnum = appSettingsOccupationSchema;
 
 const nonEmptyStringSchema = z.string().trim().min(1);
 
+// // Same shape as validation.ts's vmTargetInfoSchema; no reverse import here (validation already aggregates this file, which would cycle).
+const persistedVmTargetInfoSchema = z
+  .object({
+    provider: z.literal("agent-vm"),
+    vmName: nonEmptyStringSchema,
+    memoryGb: z.number().int().min(1).max(8).optional(),
+    cpus: z.number().int().min(1).max(16).optional(),
+    diskGb: z.number().int().min(5).max(60).optional(),
+  })
+  .strict();
+
 export const localeSchema = z.enum(["zh-CN", "en-US"]);
 const localePreferenceSchema = z.enum(["system", "zh-CN", "en-US"]);
 const zcodeInteractionBehaviorSchema = z.enum(["queue", "guide"]);
@@ -89,12 +100,7 @@ const remoteWorkspaceTargetSchema = z.discriminatedUnion("kind", [
       .optional(),
     passwordCredentialKey: nonEmptyStringSchema.optional(),
     privateKeyPassphraseCredentialKey: nonEmptyStringSchema.optional(),
-    vm: z
-      .object({
-        provider: z.literal("agent-vm"),
-        vmName: nonEmptyStringSchema,
-      })
-      .optional(),
+    vm: persistedVmTargetInfoSchema.optional(),
   }),
   z.object({
     kind: z.literal("wsl"),
@@ -360,16 +366,22 @@ function migrateLegacyWorkspaceSession(value: unknown): unknown {
                       kind: "remote",
                       workspacePath: legacyRemoteEntry.workspacePath,
                       ...(legacyRemoteEntry.localWorkspacePath
-                        ? { localWorkspacePath: legacyRemoteEntry.localWorkspacePath }
+                        ? {
+                            localWorkspacePath: legacyRemoteEntry.localWorkspacePath,
+                          }
                         : {}),
                       ...(legacyRemoteEntry.workspaceIdentity
-                        ? { workspaceIdentity: legacyRemoteEntry.workspaceIdentity }
+                        ? {
+                            workspaceIdentity: legacyRemoteEntry.workspaceIdentity,
+                          }
                         : {}),
                       target: stripHistoricalRemoteResourcePackages(legacyRemoteEntry.target),
                       lastOpenedAt: legacyRemoteEntry.lastOpenedAt,
                       lastConnectionStatus: legacyRemoteEntry.lastConnectionStatus,
                       ...(legacyRemoteEntry.lastConnectionError
-                        ? { lastConnectionError: legacyRemoteEntry.lastConnectionError }
+                        ? {
+                            lastConnectionError: legacyRemoteEntry.lastConnectionError,
+                          }
                         : {}),
                     },
                   ]

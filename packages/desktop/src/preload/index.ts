@@ -73,6 +73,8 @@ import type {
   RemoteConnectionRuntimeLog,
   VmEnsureUpRequest,
   VmEnsureUpResult,
+  VmHostResources,
+  VmReconfigureRequest,
   VmRuntimeStatus,
   VmRuntimeStatusRequest,
   VmStopRequest,
@@ -282,15 +284,21 @@ contextBridge.exposeInMainWorld("zcode", {
   listDockerContainers: () => ipcRenderer.invoke(PlatformChannels.ListDockerContainers),
   listSSHConfigAliases: (): Promise<SSHConfigAliasOption[]> =>
     ipcRenderer.invoke(PlatformChannels.ListSSHConfigAliases),
-  /** 查询 agent-vm 沙箱 VM 状态（main 的 vmRuntimeProvider 是唯一状态源） */
+  /** Query the agent-vm sandbox VM state (main's vmRuntimeProvider is the single source of truth) */
   vmStatus: (payload: VmRuntimeStatusRequest): Promise<VmRuntimeStatus> =>
     ipcRenderer.invoke(PlatformChannels.VmStatus, payload),
-  /** 确保 agent-vm 沙箱 VM 已启动；日志经 RemoteConnectionLog 按 requestId 回流 */
+  /** Ensure the agent-vm sandbox VM is running; logs flow back via RemoteConnectionLog by requestId */
   vmEnsureUp: (payload: VmEnsureUpRequest): Promise<VmEnsureUpResult> =>
     ipcRenderer.invoke(PlatformChannels.VmEnsureUp, payload),
-  /** 停止 agent-vm 沙箱 VM（端口保持 pin） */
+  /** Stop the agent-vm sandbox VM (the pinned port is kept) */
   vmStop: (payload: VmStopRequest): Promise<VmStopResult> =>
     ipcRenderer.invoke(PlatformChannels.VmStop, payload),
+  /** Query host resources (memory available to a new VM); data source for the spec panel */
+  vmHostResources: (): Promise<VmHostResources> =>
+    ipcRenderer.invoke(PlatformChannels.VmHostResources),
+  /** Resize an existing VM (--reset re-clone + re-pin the port); logs flow back by requestId */
+  vmReconfigure: (payload: VmReconfigureRequest): Promise<VmEnsureUpResult> =>
+    ipcRenderer.invoke(PlatformChannels.VmReconfigure, payload),
   loadMcpFromUserDirectory: (payload?: LoadCliMcpFromUserDirectoryRequest) =>
     ipcRenderer.invoke(PlatformChannels.LoadMcpFromUserDirectory, payload ?? {}),
   saveMcpToUserDirectory: (payload: SaveCliMcpToUserDirectoryRequest) =>

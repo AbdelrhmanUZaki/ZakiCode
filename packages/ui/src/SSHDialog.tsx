@@ -11,6 +11,8 @@ import {
   createUuid,
   type RemoteTarget,
   type RemoteWorkspaceSessionEntry,
+  type VmHostResources,
+  type VmResourceSpec,
   type VmRuntimeEndpoint,
 } from "@zcode/shared";
 import {
@@ -48,6 +50,7 @@ import {
   RemoteConnectionKindStep,
   RemoteConnectionSettingsStep,
 } from "@/RemoteConnectionDialogContent.js";
+import { RemoteConnectionVmSpecStep } from "@/remote-connection/RemoteConnectionVmSpecStep.js";
 import {
   RemoteConnectionWizardHeader,
   RemoteConnectionWizardSidebar,
@@ -129,6 +132,12 @@ export function RemoteConnectionDialog({
   const vmFlowStartedRef = useRef(false);
   // 记录上一次已启动 boot 的目录；变化即视为新流程，强制备位 vmFlowStartedRef。
   const vmStartedPathRef = useRef<string | null>(null);
+  // 首次创建的规格面板数据；非空时 connecting 步骤渲染面板而非日志流。
+  const [vmSpecPanel, setVmSpecPanel] = useState<{
+    hostResources: VmHostResources;
+  } | null>(null);
+  // 面板确认过的规格：boot 失败重试时沿用，不再重新询问。
+  const lastVmSpecRef = useRef<VmResourceSpec | undefined>(undefined);
   const { connectionLogs, resetConnectionLogs } =
     useRemoteConnectionLogs(connectingRequestId);
   const open = controlledOpen ?? uncontrolledOpen;
@@ -206,6 +215,7 @@ export function RemoteConnectionDialog({
     if (vmWorkspacePath && vmWorkspacePath !== vmStartedPathRef.current) {
       vmStartedPathRef.current = vmWorkspacePath;
       vmFlowStartedRef.current = false;
+      lastVmSpecRef.current = undefined;
     }
     if (!vmWorkspacePath) {
       vmStartedPathRef.current = null;
@@ -213,7 +223,7 @@ export function RemoteConnectionDialog({
   }, [vmWorkspacePath]);
 
   useEffect(() => {
-    // VM 模式：打开即自动 boot（无需用户点击）。ref 防止 StrictMode 双执行重复起 VM。
+    // VM 模式：打开即自动引导（无需用户点击）。ref 防止 StrictMode 双执行重复起 VM。
     if (
       !open ||
       !vmWorkspacePath ||
@@ -223,8 +233,8 @@ export function RemoteConnectionDialog({
       return;
     }
     vmFlowStartedRef.current = true;
-    void startVmRemoteConnection(vmWorkspacePath);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- startVmRemoteConnection 每渲染重建，依赖 ref 去重
+    void bootstrapVmFlow(vmWorkspacePath);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrapVmFlow 每渲染重建，依赖 ref 去重
   }, [open, vmWorkspacePath, currentStep]);
 
   const updateConnectingRequestId = useCallback(
@@ -287,6 +297,7 @@ export function RemoteConnectionDialog({
       setConnectedSessionId(null);
       setPendingRemoteTarget(null);
       vmFlowStartedRef.current = false;
+      setVmSpecPanel(null);
       updateConnectingRequestId(null);
       applyOpenState(false);
     },
@@ -377,7 +388,10 @@ export function RemoteConnectionDialog({
     }
   };
 
-  const buildVmRemoteTarget = (endpoint: VmRuntimeEndpoint): RemoteTarget =>
+  const buildVmRemoteTarget = (
+    endpoint: VmRuntimeEndpoint,
+    spec?: VmResourceSpec,
+  ): RemoteTarget =>
     withDefaultRemoteResourcePackages({
       kind: "ssh",
       host: endpoint.host,
@@ -386,12 +400,22 @@ export function RemoteConnectionDialog({
       sshConfigAlias: endpoint.alias,
       privateKeyPath: endpoint.privateKeyPath,
       assetInstallMode: "local-download-upload",
-      vm: { provider: "agent-vm", vmName: endpoint.vm },
+      // 规格字段由发起方（本面板/设置面板）持有并随 marker 落库；重连不消费它们。
+      vm: {
+        provider: "agent-vm",
+        vmName: endpoint.vm,
+        ...(spec?.memoryGb !== undefined ? { memoryGb: spec.memoryGb } : {}),
+        ...(spec?.cpus !== undefined ? { cpus: spec.cpus } : {}),
+        ...(spec?.diskGb !== undefined ? { diskGb: spec.diskGb } : {}),
+      },
     });
 
   // VM 模式主流程：ensureUp 的启动日志与 SSH 连接日志共用同一个 requestId，
   // connecting 步骤的日志面板能按时间顺序展示“VM 启动 → 建立连接”的完整流水。
-  const startVmRemoteConnection = async (workspacePath: string) => {
+  const startVmRemoteConnection = async (
+    workspacePath: string,
+    spec?: VmResourceSpec,
+  ) => {
     if (loading) {
       return;
     }
@@ -402,19 +426,20 @@ export function RemoteConnectionDialog({
     }
 
     setLoading(true);
+    setVmSpecPanel(null);
     const requestId = createUuid();
     updateConnectingRequestId(requestId);
     resetFeedback();
     resetConnectionLogs();
     setCurrentStep("connecting");
     try {
-      const boot = await vmEnsureUp({ workspacePath, requestId });
+      const boot = await vmEnsureUp({ workspacePath, requestId, spec });
       if (!boot.success || !boot.endpoint) {
         throw new Error(
           boot.error || intl.formatMessage({ id: "vm.runtime.bootFailed" }),
         );
       }
-      const nextTarget = buildVmRemoteTarget(boot.endpoint);
+      const nextTarget = buildVmRemoteTarget(boot.endpoint, spec);
       setPendingRemoteTarget(nextTarget);
       const sessionId = await onConnect(nextTarget, requestId);
       const completionState =
@@ -431,6 +456,31 @@ export function RemoteConnectionDialog({
     } finally {
       setLoading(false);
     }
+  };
+
+  // VM 模式引导：先探测 VM 是否存在——不存在（首次创建）则先给规格面板，
+  // 让用户带着宿主真实余量做一次性决定；已存在则维持零点击直启。
+  const bootstrapVmFlow = async (workspacePath: string) => {
+    const vmStatusQuery = platform.vmStatus;
+    if (!vmStatusQuery || !platform.vmHostResources) {
+      void startVmRemoteConnection(workspacePath);
+      return;
+    }
+    setLoading(true);
+    setCurrentStep("connecting");
+    try {
+      const status = await vmStatusQuery({ workspacePath });
+      if (status.state === "none") {
+        const hostResources = await platform.vmHostResources();
+        // 面板等待用户决定，必须先解除 loading，否则 Start 会被并发保护拦下。
+        setLoading(false);
+        setVmSpecPanel({ hostResources });
+        return;
+      }
+    } catch {
+      // 探测失败按既有 VM 处理：直接 ensureUp（幂等，能自愈大多数状态）。
+    }
+    void startVmRemoteConnection(workspacePath);
   };
 
   const handleConnect = async () => {
@@ -514,6 +564,7 @@ export function RemoteConnectionDialog({
         // VM 模式的完成路径不走 closeDialog；这里必须复位一次性标记，
         // 否则第二次 "Open folder in VM" 打开后 auto-start 被旧 ref 拦截，弹窗停在空白 kind 步骤。
         vmFlowStartedRef.current = false;
+        setVmSpecPanel(null);
         updateConnectingRequestId(null);
         applyOpenState(false);
       } catch (selectionError) {
@@ -709,7 +760,23 @@ export function RemoteConnectionDialog({
                   />
                 ) : null}
 
-                {currentStep === "connecting" ? (
+                {currentStep === "connecting" && vmSpecPanel && vmMode ? (
+                  <RemoteConnectionVmSpecStep
+                    workspacePath={vmWorkspacePath ?? ""}
+                    hostResources={vmSpecPanel.hostResources}
+                    onStart={(spec) => {
+                      lastVmSpecRef.current = spec;
+                      if (vmWorkspacePath) {
+                        void startVmRemoteConnection(vmWorkspacePath, spec);
+                      }
+                    }}
+                    onCancel={() => {
+                      void handleCloseRequest();
+                    }}
+                  />
+                ) : null}
+
+                {currentStep === "connecting" && !(vmSpecPanel && vmMode) ? (
                   <RemoteConnectionConnectingStep
                     kind="ssh"
                     logs={connectionLogs}
@@ -745,7 +812,10 @@ export function RemoteConnectionDialog({
                       vmMode
                         ? () => {
                             if (vmWorkspacePath) {
-                              void startVmRemoteConnection(vmWorkspacePath);
+                              void startVmRemoteConnection(
+                                vmWorkspacePath,
+                                lastVmSpecRef.current,
+                              );
                             }
                           }
                         : () => {

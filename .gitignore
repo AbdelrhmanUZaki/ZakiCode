@@ -12,6 +12,8 @@ packages/desktop/bundled-resources/
 packages/desktop/bundled-agents/
 packages/desktop/bundled-tools/
 packages/desktop/mock-cdn/
+# tsup 在加载 tsup.config.ts 时落盘的临时打包配置，随 dev/build 重新生成。
+packages/desktop/tsup.config.bundled_*.mjs
 *.tsbuildinfo
 .DS_Store
 coverage/

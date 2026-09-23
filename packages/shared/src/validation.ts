@@ -65,6 +65,20 @@ export const credentialRecordSchema = z.record(z.string(), z.string());
 export const credentialKeySchema = nonEmptyStringSchema;
 export const credentialValueSchema = z.string();
 
+const vmSpecFields = {
+  memoryGb: z.number().int().min(1).max(8).optional(),
+  cpus: z.number().int().min(1).max(16).optional(),
+  diskGb: z.number().int().min(5).max(60).optional(),
+};
+
+export const vmTargetInfoSchema = z
+  .object({
+    provider: z.literal("agent-vm"),
+    vmName: nonEmptyStringSchema,
+    ...vmSpecFields,
+  })
+  .strict();
+
 export const sshConnectOptionsSchema = z.object({
   kind: z.literal("ssh"),
   host: nonEmptyStringSchema,
@@ -80,12 +94,7 @@ export const sshConnectOptionsSchema = z.object({
       selectedPackageIds: z.array(z.string().refine(isKnownRemoteResourcePackageId)).optional(),
     })
     .optional(),
-  vm: z
-    .object({
-      provider: z.literal("agent-vm"),
-      vmName: nonEmptyStringSchema,
-    })
-    .optional(),
+  vm: vmTargetInfoSchema.optional(),
 });
 
 export const wslConnectOptionsSchema = z.object({
@@ -475,11 +484,17 @@ export type HostResourceUsageSnapshotRequestMessage = z.infer<
 
 export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
   z
-    .object({ type: z.literal("database-startup-control"), control: databaseStartupControlSchema })
+    .object({
+      type: z.literal("database-startup-control"),
+      control: databaseStartupControlSchema,
+    })
     .strict(),
   hostResourceUsageSnapshotRequestMessageSchema,
   z
-    .object({ type: z.literal("resource-usage-snapshot-cancel"), requestId: nonEmptyStringSchema })
+    .object({
+      type: z.literal("resource-usage-snapshot-cancel"),
+      requestId: nonEmptyStringSchema,
+    })
     .strict(),
   hostInitLocalMessageSchema,
   hostConnectRemoteWorkspaceMessageSchema,
@@ -990,7 +1005,10 @@ export type HostResourceUsageSnapshotResultResponse = z.infer<
 
 export const hostResponseMessageSchema = z.discriminatedUnion("type", [
   z
-    .object({ type: z.literal("database-startup-state"), state: databaseStartupStateSchema })
+    .object({
+      type: z.literal("database-startup-state"),
+      state: databaseStartupStateSchema,
+    })
     .strict(),
   hostResourceUsageSnapshotResultResponseSchema,
   hostRemoteWorkspaceConnectionLogResponseSchema,

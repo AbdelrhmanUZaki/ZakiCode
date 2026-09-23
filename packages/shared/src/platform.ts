@@ -34,6 +34,8 @@ import type {
 import type {
   VmEnsureUpRequest,
   VmEnsureUpResult,
+  VmHostResources,
+  VmReconfigureRequest,
   VmRuntimeStatus,
   VmRuntimeStatusRequest,
   VmStopRequest,
@@ -208,7 +210,11 @@ export type BrowserGuestAttachRejectReason =
 /** Renderer 上报 guest 后 main 返回的绑定结果；拒绝不能再被伪装成无返回的 ready timeout。 */
 export type BrowserGuestAttachResult =
   | { ok: true; guestGeneration: number }
-  | { ok: false; reason: BrowserGuestAttachRejectReason; recoveryRequested: boolean };
+  | {
+      ok: false;
+      reason: BrowserGuestAttachRejectReason;
+      recoveryRequested: boolean;
+    };
 
 /** 已安装的编辑器/终端信息 */
 export interface EditorInfo {
@@ -622,19 +628,28 @@ export interface IPlatformService {
   listSSHConfigAliases(): Promise<SSHConfigAliasOption[]>;
 
   /**
-   * 查询 agent-vm 沙箱 VM 状态（仅 Desktop：状态所有者是 main 的 vmRuntimeProvider）。
-   * Web/无 bridge 平台不实现；调用方应按“无 VM 支持”降级。
+   * Query the agent-vm sandbox VM state (desktop only: owned by main's vmRuntimeProvider).
+   * Not implemented on web/platforms without the bridge; callers degrade to no VM support.
    */
   vmStatus?(request: VmRuntimeStatusRequest): Promise<VmRuntimeStatus>;
 
   /**
-   * 确保某目录对应的 agent-vm VM 已启动（幂等），返回可连接 endpoint。
-   * 端口冲突可能让 pinned port 漂移，调用方必须用返回值覆写已持久化 target。
+   * Ensure the agent-vm VM for a directory is running (idempotent); returns a connectable endpoint.
+   * Port collisions can move the pinned port; callers must overwrite the persisted target with the returned value.
    */
   vmEnsureUp?(request: VmEnsureUpRequest): Promise<VmEnsureUpResult>;
 
-  /** 停止某目录对应的 agent-vm VM（端口保持 pin，下次 ensureUp 秒级恢复）。 */
+  /** Stop the agent-vm VM for a directory (port stays pinned; the next ensureUp recovers in seconds). */
   vmStop?(request: VmStopRequest): Promise<VmStopResult>;
+
+  /** Query host resources (memory available to a new VM); data source for the spec panel. */
+  vmHostResources?(): Promise<VmHostResources>;
+
+  /**
+   * Resize an existing VM: agent-vm --reset re-clones (the mounted directory is unaffected),
+   * re-pins the port and starts; returns the new endpoint. Takes as long as a first create (minutes).
+   */
+  vmReconfigure?(request: VmReconfigureRequest): Promise<VmEnsureUpResult>;
 
   /** 读取宿主环境中的原生 MCP 用户目录配置；手机远控通过已连接桌面 host 转发。 */
   loadMcpFromUserDirectory?(

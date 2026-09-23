@@ -83,18 +83,24 @@ declare global {
       listDockerContainers(): Promise<DockerContainerInfo[]>;
       /** 列出当前机器 SSH config 里可用于快速填表的 alias */
       listSSHConfigAliases(): Promise<SSHConfigAliasOption[]>;
-      /** 查询 agent-vm 沙箱 VM 状态 */
+      /** Query the agent-vm sandbox VM state */
       vmStatus?(
         payload: import("@zcode/shared").VmRuntimeStatusRequest,
       ): Promise<import("@zcode/shared").VmRuntimeStatus>;
-      /** 确保 agent-vm 沙箱 VM 已启动（幂等），返回可连接 endpoint */
+      /** Ensure the agent-vm sandbox VM is running (idempotent); returns a connectable endpoint */
       vmEnsureUp?(
         payload: import("@zcode/shared").VmEnsureUpRequest,
       ): Promise<import("@zcode/shared").VmEnsureUpResult>;
-      /** 停止 agent-vm 沙箱 VM（端口保持 pin） */
+      /** Stop the agent-vm sandbox VM (the pinned port is kept) */
       vmStop?(
         payload: import("@zcode/shared").VmStopRequest,
       ): Promise<import("@zcode/shared").VmStopResult>;
+      /** Query host resources (memory available to a new VM) */
+      vmHostResources?(): Promise<import("@zcode/shared").VmHostResources>;
+      /** Resize an existing VM (--reset re-clone + re-pin the port) */
+      vmReconfigure?(
+        payload: import("@zcode/shared").VmReconfigureRequest,
+      ): Promise<import("@zcode/shared").VmEnsureUpResult>;
       /** renderer 日志通过 IPC 传到 main 进程统一存储 */
       log(level: "info" | "warn" | "error", args: unknown[]): void;
       /** 打开系统目录选择框，返回选中路径或 null */
@@ -112,13 +118,9 @@ declare global {
       /** 从系统拖拽/文件输入得到的 Web File 解析真实本地路径 */
       getPathForFile?(file: File): string | null;
       /** 订阅当前窗口内远程连接过程日志，返回 disposer */
-      onRemoteConnectionLog(
-        handler: (entry: RemoteConnectionRuntimeLog) => void,
-      ): () => void;
+      onRemoteConnectionLog(handler: (entry: RemoteConnectionRuntimeLog) => void): () => void;
       /** 订阅远程 workspace session 关闭事件，返回 disposer */
-      onRemoteSessionClosed(
-        handler: (event: RemoteSessionClosedEvent) => void,
-      ): () => void;
+      onRemoteSessionClosed(handler: (event: RemoteSessionClosedEvent) => void): () => void;
       /** 订阅 Bot 触发的远程 workspace 重连成功事件，返回 disposer */
       onBotRemoteWorkspaceReconnected(
         handler: (event: BotRemoteWorkspaceReconnectedEvent) => void,
@@ -137,9 +139,7 @@ declare global {
       /** 注册 main 进程触发新建 tab 的回调，返回 disposer */
       onNewTab(handler: () => void): () => void;
       /** 注册内置浏览器 webview 请求打开新页面的回调，返回 disposer */
-      onOpenBrowserUrl?(
-        handler: (request: EmbeddedBrowserOpenUrlRequest) => void,
-      ): () => void;
+      onOpenBrowserUrl?(handler: (request: EmbeddedBrowserOpenUrlRequest) => void): () => void;
       onBrowserViewReady?(
         handler: (payload: {
           workspaceKey: string;
@@ -150,9 +150,7 @@ declare global {
           browserGeneration: number;
         }) => void,
       ): () => void;
-      onBrowserViewOperation?(
-        handler: (payload: BrowserViewOperationPayload) => void,
-      ): () => void;
+      onBrowserViewOperation?(handler: (payload: BrowserViewOperationPayload) => void): () => void;
       onBrowserViewVisibility?(
         handler: (payload: {
           visible: boolean;
@@ -173,9 +171,7 @@ declare global {
       onBrowserViewScreenshotSurfaceRelease?(
         handler: (payload: BrowserViewScreenshotSurfaceReleasePayload) => void,
       ): () => void;
-      browserViewScreenshotSurfaceReady?(
-        payload: BrowserViewScreenshotSurfaceReadyPayload,
-      ): void;
+      browserViewScreenshotSurfaceReady?(payload: BrowserViewScreenshotSurfaceReadyPayload): void;
       onBrowserViewCloseTab?(
         handler: (payload: BrowserViewCloseTabNotification) => void,
       ): () => void;
@@ -192,9 +188,7 @@ declare global {
       /** 注册 main 进程通过 deep link 直接打开本地工作区目录的回调，返回 disposer */
       onOpenWorkspacePath?(handler: (path: string) => void): () => void;
       /** 注册窗口全屏状态变化回调，返回 disposer */
-      onWindowFullscreenChanged(
-        handler: (isFullscreen: boolean) => void,
-      ): () => void;
+      onWindowFullscreenChanged(handler: (isFullscreen: boolean) => void): () => void;
       /** 读取窗口最大化状态与系统原生圆角能力 */
       getDesktopWindowChromeState?(): Promise<DesktopWindowChromeState>;
       /** 订阅窗口最大化状态与系统原生圆角能力变化 */
@@ -204,9 +198,7 @@ declare global {
       /** 读取当前桌面窗口页面缩放档位 */
       getDesktopZoomLevel?(): Promise<DesktopZoomState>;
       /** 订阅当前桌面窗口页面缩放档位变化 */
-      onDesktopZoomLevelChanged?(
-        handler: (state: DesktopZoomState) => void,
-      ): () => void;
+      onDesktopZoomLevelChanged?(handler: (state: DesktopZoomState) => void): () => void;
       /** 注册用户点击系统通知后跳转到对应任务的回调，返回 disposer */
       onTaskNotificationClick(handler: (taskId: string) => void): () => void;
       /** 打开外部 URL */
@@ -214,13 +206,9 @@ declare global {
       /** 查询当前语言下是否存在可用的用户社群入口 */
       canOpenCommunity(locale: Locale): Promise<boolean>;
       /** 在系统文件管理器中打开指定路径 */
-      openInFileManager(
-        path: string,
-      ): Promise<{ success: boolean; error?: string }>;
+      openInFileManager(path: string): Promise<{ success: boolean; error?: string }>;
       /** 使用系统默认应用打开本地文件 */
-      openExternalFile(
-        path: string,
-      ): Promise<{ success: boolean; error?: string }>;
+      openExternalFile(path: string): Promise<{ success: boolean; error?: string }>;
       /** 打开 ZCode Computer Use 完整权限引导 */
       openCuaPermissionOnboarding?(
         options?: OpenCuaPermissionOnboardingOptions,
@@ -242,9 +230,7 @@ declare global {
       /** 同步当前 renderer 的 telemetry 上下文到 main process */
       syncTelemetryContext(context: TelemetryRendererContext): void;
       /** 通过 main process 统一上报业务 telemetry 事件 */
-      reportTelemetryEvent(
-        payload: RendererTelemetryEventPayload,
-      ): Promise<void>;
+      reportTelemetryEvent(payload: RendererTelemetryEventPayload): Promise<void>;
       /** 读取 Desktop Renderer 用户操作 Trace 灰度配置。 */
       getRendererActionTraceConfig?(): Promise<RendererActionTraceConfigV1>;
       /** 订阅 Renderer 用户操作 Trace 灰度配置变化。 */
@@ -275,21 +261,11 @@ declare global {
         residencyGeneration?: number;
       }): Promise<void>;
       /** 重建 `<webview>` 前让 main 精确断开旧 guest 的 CDP。 */
-      browserViewDetachGuest?(payload: {
-        key: string;
-        webContentsId: number;
-      }): Promise<boolean>;
+      browserViewDetachGuest?(payload: { key: string; webContentsId: number }): Promise<boolean>;
       browserViewCloseTab?(payload: BrowserViewCloseTabRequest): Promise<void>;
-      browserViewReportResidency?(
-        payload: BrowserViewResidencyReportPayload,
-      ): Promise<void>;
-      browserViewSuspendReady?(payload: {
-        tabId: string;
-        generation: number;
-      }): Promise<void>;
-      browserViewEnsureResident?(
-        payload: BrowserViewCloseTabRequest,
-      ): Promise<void>;
+      browserViewReportResidency?(payload: BrowserViewResidencyReportPayload): Promise<void>;
+      browserViewSuspendReady?(payload: { tabId: string; generation: number }): Promise<void>;
+      browserViewEnsureResident?(payload: BrowserViewCloseTabRequest): Promise<void>;
       browserViewRestoreTabs?(
         payload: BrowserViewRestoreTabsRequest,
       ): Promise<BrowserViewRestoredTabShell[]>;
@@ -303,19 +279,13 @@ declare global {
         options?: import("@zcode/shared").ChromeBrowserDataImportOptions,
       ): Promise<ChromeBrowserDataImportResult>;
       /** 清理内置浏览器缓存或全部站点数据。 */
-      clearEmbeddedBrowserData?(
-        mode: "cache" | "all",
-      ): Promise<EmbeddedBrowserDataClearResult>;
+      clearEmbeddedBrowserData?(mode: "cache" | "all"): Promise<EmbeddedBrowserDataClearResult>;
       /** 注册新版本已下载完毕的回调，返回 disposer */
       onUpdateReady(callback: (version: string) => void): () => void;
       /** 注册"手动检查更新"结果的回调，返回 disposer */
-      onUpdateCheckResult(
-        callback: (payload: UpdateCheckResultPayload) => void,
-      ): () => void;
+      onUpdateCheckResult(callback: (payload: UpdateCheckResultPayload) => void): () => void;
       /** 注册自动更新持续状态变化，返回 disposer */
-      onUpdateStateChanged?(
-        callback: (payload: UpdateStatePayload) => void,
-      ): () => void;
+      onUpdateStateChanged?(callback: (payload: UpdateStatePayload) => void): () => void;
       /** 主动读取当前自动更新状态 */
       getUpdateState?(): Promise<UpdateStatePayload>;
       /** 开始下载当前已发现的更新 */
@@ -333,9 +303,7 @@ declare global {
       /** 跳过当前已发现的更新版本 */
       skipUpdateVersion?(version: string): Promise<void>;
       /** 注册应用语言变化，返回 disposer */
-      onApplicationLocaleChanged?(
-        callback: (locale: Locale) => void,
-      ): () => void;
+      onApplicationLocaleChanged?(callback: (locale: Locale) => void): () => void;
       /** 订阅 main 进程修改 settings 后的通知 */
       onSettingsChanged?(callback: () => void): () => void;
       /** 查询桌面端正在运行的会话数量 */

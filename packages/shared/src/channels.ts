@@ -69,6 +69,8 @@ import type {
 import type {
   VmEnsureUpRequest,
   VmEnsureUpResult,
+  VmHostResources,
+  VmReconfigureRequest,
   VmRuntimeStatus,
   VmRuntimeStatusRequest,
   VmStopRequest,
@@ -203,12 +205,16 @@ export const PlatformChannels = {
   ListDockerContainers: "zcode:list-docker-containers",
   /** Renderer → Main：列出 SSH config 里可用于快速填表的 alias */
   ListSSHConfigAliases: "zcode:list-ssh-config-aliases",
-  /** Renderer → Main：查询 agent-vm 沙箱 VM 状态（便宜，可轮询） */
+  /** Renderer → Main: query the agent-vm sandbox VM state (cheap, pollable) */
   VmStatus: "zcode:vm-status",
-  /** Renderer → Main：确保 agent-vm 沙箱 VM 已启动（幂等），返回可连接 endpoint；端口以读回值为准 */
+  /** Renderer → Main: ensure the agent-vm sandbox VM is running (idempotent); returns a connectable endpoint; the read-back port is authoritative */
   VmEnsureUp: "zcode:vm-ensure-up",
-  /** Renderer → Main：停止 agent-vm 沙箱 VM（端口保持 pin） */
+  /** Renderer → Main: stop the agent-vm sandbox VM (the pinned port is kept) */
   VmStop: "zcode:vm-stop",
+  /** Renderer → Main: query host resources for the spec panel */
+  VmHostResources: "zcode:vm-host-resources",
+  /** Renderer → Main: resize an existing VM (--reset re-clone + re-pin the port + start) */
+  VmReconfigure: "zcode:vm-reconfigure",
   /** Renderer → Main：从用户目录加载 CLI MCP 配置 */
   LoadMcpFromUserDirectory: "zcode:load-mcp-from-user-directory",
   /** Renderer → Main：保存 CLI MCP 配置到用户目录 */
@@ -777,6 +783,14 @@ export interface PlatformChannelMap {
   [PlatformChannels.VmStop]: {
     request: VmStopRequest;
     response: VmStopResult;
+  };
+  [PlatformChannels.VmHostResources]: {
+    request: void;
+    response: VmHostResources;
+  };
+  [PlatformChannels.VmReconfigure]: {
+    request: VmReconfigureRequest;
+    response: VmEnsureUpResult;
   };
   [PlatformChannels.LoadMcpFromUserDirectory]: {
     request: LoadCliMcpFromUserDirectoryRequest;

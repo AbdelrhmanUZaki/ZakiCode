@@ -1,15 +1,14 @@
 /**
- * agent-vm VM runtime IPC —— vmStatus / vmEnsureUp / vmStop 的窗口级注册。
+ * agent-vm VM runtime IPC —— vmStatus / vmEnsureUp / vmStop / vmHostResources /
+ * vmReconfigure 的窗口级注册。
  *
- * ensureUp 的子进程输出通过现有 RemoteConnectionLog 频道回流（按 requestId 归属
- * 到发起重连/连接的 workspace 日志面板），不新开日志通道。
+ * ensureUp / reconfigure 的子进程输出通过现有 RemoteConnectionLog 频道回流
+ * （按 requestId 归属到发起流程的日志面板），不新开日志通道。
  */
 import { BrowserWindow, ipcMain } from "electron";
-import { PlatformChannels, type VmEnsureUpRequest } from "@zcode/shared";
-import {
-  vmRuntimeProvider,
-  type VmRuntimeLogLine,
-} from "./vmRuntimeProvider.js";
+import { PlatformChannels, type VmResourceSpec } from "@zcode/shared";
+import { vmRuntimeProvider } from "./vmRuntimeProvider.js";
+import type { VmRuntimeLogLine } from "./vmRuntimeLifecycle.js";
 import { logger } from "./logger.js";
 
 function readWorkspacePath(payload: unknown): string | null {
@@ -18,6 +17,29 @@ function readWorkspacePath(payload: unknown): string | null {
   }
   const value = (payload as { workspacePath?: unknown }).workspacePath;
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function readRequestId(payload: unknown): string | undefined {
+  const value = (payload as { requestId?: unknown } | null)?.requestId;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function readResourceSpec(payload: unknown): VmResourceSpec | undefined {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined;
+  }
+  const raw = (payload as { spec?: Record<string, unknown> }).spec;
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const spec: VmResourceSpec = {};
+  for (const key of ["memoryGb", "cpus", "diskGb"] as const) {
+    const value = raw[key];
+    if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+      spec[key] = value;
+    }
+  }
+  return Object.keys(spec).length > 0 ? spec : undefined;
 }
 
 function createWindowLogSink(
@@ -67,12 +89,10 @@ export function registerVmIpcHandlers(): void {
       if (!workspacePath) {
         return { success: false, error: "workspacePath is required" } as const;
       }
-      const requestId =
-        typeof (payload as VmEnsureUpRequest).requestId === "string"
-          ? (payload as VmEnsureUpRequest).requestId
-          : undefined;
+      const requestId = readRequestId(payload);
+      const spec = readResourceSpec(payload);
       const onLog = createWindowLogSink(event.sender.id, requestId);
-      return vmRuntimeProvider.ensureUp(workspacePath, onLog);
+      return vmRuntimeProvider.ensureUp(workspacePath, onLog, spec);
     },
   );
 
@@ -83,4 +103,28 @@ export function registerVmIpcHandlers(): void {
     }
     return vmRuntimeProvider.stop(workspacePath);
   });
+
+  ipcMain.handle(PlatformChannels.VmHostResources, async () => {
+    return vmRuntimeProvider.hostResources();
+  });
+
+  ipcMain.handle(
+    PlatformChannels.VmReconfigure,
+    async (event, payload: unknown) => {
+      const workspacePath = readWorkspacePath(payload);
+      if (!workspacePath) {
+        return {
+          success: false,
+          error: "workspacePath is required",
+        } as const;
+      }
+      const spec = readResourceSpec(payload);
+      if (!spec) {
+        return { success: false, error: "spec is required" } as const;
+      }
+      const requestId = readRequestId(payload);
+      const onLog = createWindowLogSink(event.sender.id, requestId);
+      return vmRuntimeProvider.reconfigure(workspacePath, spec, onLog);
+    },
+  );
 }

@@ -23,6 +23,7 @@ import {
   LoaderCircle,
   RefreshCwIcon,
   MessageCirclePlus,
+  SlidersHorizontal,
   Square,
   XIcon,
 } from "lucide-react";
@@ -54,13 +55,11 @@ import {
   formatRemoteWorkspaceDisplayLabel,
 } from "@/lib/remoteWorkspaceHistory.js";
 import { TaskList } from "@/TaskList.js";
-import {
-  selectWorkspaceZCodeState,
-  useZCodeSessionStore,
-} from "@/store/zcodeSessionStore.js";
+import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import type { RemoteConnectionLogEntry } from "@/hooks/useRemoteConnectionLogs.js";
 import { ReconnectingRemoteWorkspaceLogTooltip } from "@/WorkspaceSidebar/ReconnectingRemoteWorkspaceLogTooltip.js";
+import { VmSettingsDialog } from "@/WorkspaceSidebar/VmSettingsDialog.js";
 import { cn } from "@/components/lib/utils.js";
 import {
   TID_WORKSPACE_CLOSE,
@@ -72,10 +71,7 @@ import type { ZCodeTaskMeta } from "@zcode/shared";
 import { isVmBackedRemoteTarget } from "@zcode/shared";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useVmRuntimeStatus } from "@/hooks/useVmRuntimeStatus.js";
-import {
-  useBaseWorkspaceServices,
-  useWorkspaceServices,
-} from "@/hooks/useWorkspaceServices.js";
+import { useBaseWorkspaceServices, useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import {
   applyTaskQueryCacheMutation,
   invalidateTaskQueryCacheByScopes,
@@ -101,10 +97,7 @@ import {
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { toast } from "@/components/ui/toast.js";
 
-export type SortableBindings = Pick<
-  ReturnType<typeof useSortable>,
-  "attributes" | "listeners"
->;
+export type SortableBindings = Pick<ReturnType<typeof useSortable>, "attributes" | "listeners">;
 
 // workspace 行在流式工具事件期间会因父级刷新而重渲染；
 // TaskList 如果每次收到新的空数组，会把等价数据误判成变化并连带刷新任务行。
@@ -112,15 +105,10 @@ const EMPTY_PINNED_TASKS: ZCodeTaskMeta[] = [];
 
 function isHomeWorkspacePath(path: string): boolean {
   const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return /^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\/Users\/[^/]+)$/.test(
-    normalizedPath,
-  );
+  return /^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\/Users\/[^/]+)$/.test(normalizedPath);
 }
 
-type SshRemoteTarget = Extract<
-  NonNullable<WorkspaceTabState["remoteTarget"]>,
-  { kind: "ssh" }
->;
+type SshRemoteTarget = Extract<NonNullable<WorkspaceTabState["remoteTarget"]>, { kind: "ssh" }>;
 
 interface SshWorkspaceTooltipDetails {
   alias: string | null;
@@ -135,9 +123,7 @@ function formatSshRemoteHostLabel(target: SshRemoteTarget): string {
   return `${username}@${host}:${port}`;
 }
 
-function getSshWorkspaceTooltipDetails(
-  tab: WorkspaceTabState,
-): SshWorkspaceTooltipDetails | null {
+function getSshWorkspaceTooltipDetails(tab: WorkspaceTabState): SshWorkspaceTooltipDetails | null {
   if (tab.remoteTarget?.kind !== "ssh") {
     return null;
   }
@@ -184,10 +170,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     taskId: string,
     targetWorkspaceIdentity?: string,
   ) => void;
-  onStartDraftInWorkspace: (
-    targetWorkspacePath: string,
-    targetWorkspaceIdentity?: string,
-  ) => void;
+  onStartDraftInWorkspace: (targetWorkspacePath: string, targetWorkspaceIdentity?: string) => void;
   taskItems: ZCodeTaskMeta[];
   taskListLoading: boolean;
   taskListHasMore: boolean;
@@ -197,10 +180,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   onShowMoreTasks: () => void;
   reconnectingRemoteWorkspaceKeys: string[];
   remoteWorkspaceErrorByWorkspaceKey: Record<string, string>;
-  reconnectingRemoteWorkspaceLogsByWorkspaceKey: Record<
-    string,
-    RemoteConnectionLogEntry[]
-  >;
+  reconnectingRemoteWorkspaceLogsByWorkspaceKey: Record<string, RemoteConnectionLogEntry[]>;
   onReconnectRemoteWorkspace: (workspaceKey: string) => Promise<void>;
   onOpenFileTree?: (target: {
     workspacePath: string;
@@ -218,18 +198,14 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     selectWorkspaceZCodeState(state, tab.workspacePath, tab.workspaceIdentity),
   );
   const activeTaskId = workspaceZCodeState.activeTaskId;
-  const removeTaskState = useZCodeSessionStore(
-    (state) => state.removeTaskState,
-  );
+  const removeTaskState = useZCodeSessionStore((state) => state.removeTaskState);
   const upsertOptimisticTaskListItem = useZCodeSessionStore(
     (state) => state.upsertOptimisticTaskListItem,
   );
   const removeOptimisticTaskListItem = useZCodeSessionStore(
     (state) => state.removeOptimisticTaskListItem,
   );
-  const setTaskUnreadIndicator = useZCodeSessionStore(
-    (state) => state.setTaskUnreadIndicator,
-  );
+  const setTaskUnreadIndicator = useZCodeSessionStore((state) => state.setTaskUnreadIndicator);
   const services = useWorkspaceServices(
     tab.workspacePath,
     tab.remoteSessionId,
@@ -259,19 +235,12 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   const isRemoteWorkspace = Boolean(
     tab.remoteSessionId || tab.remoteTarget || tab.workspaceIdentity,
   );
-  const isDisconnectedRemoteWorkspace = Boolean(
-    isRemoteWorkspace && !tab.remoteSessionId,
-  );
+  const isDisconnectedRemoteWorkspace = Boolean(isRemoteWorkspace && !tab.remoteSessionId);
   const isReconnectPending = Boolean(
-    isDisconnectedRemoteWorkspace &&
-    reconnectingRemoteWorkspaceKeys.includes(remoteWorkspaceKey),
+    isDisconnectedRemoteWorkspace && reconnectingRemoteWorkspaceKeys.includes(remoteWorkspaceKey),
   );
-  const remoteWorkspaceError =
-    remoteWorkspaceErrorByWorkspaceKey[remoteWorkspaceKey];
-  const workspaceSidebarLabel = formatRemoteWorkspaceDisplayLabel(
-    tab.label,
-    tab.remoteTarget,
-  );
+  const remoteWorkspaceError = remoteWorkspaceErrorByWorkspaceKey[remoteWorkspaceKey];
+  const workspaceSidebarLabel = formatRemoteWorkspaceDisplayLabel(tab.label, tab.remoteTarget);
   const sshWorkspaceTooltipDetails = getSshWorkspaceTooltipDetails(tab);
   const reconnectRuntimeLogs =
     reconnectingRemoteWorkspaceLogsByWorkspaceKey[remoteWorkspaceKey] ?? [];
@@ -279,22 +248,16 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     // 远程项目只要处于“断连”就显示叹号，会把“尚未连接/已断开但无错误”和“真实连接失败”混在一起，
     // 用户看到列表里的 warning 图标时无法判断是否真有故障。
     // 这里收敛成只有存在连接错误正文时才显示叹号，普通未连接状态仅保留重连入口。
-    isDisconnectedRemoteWorkspace &&
-    !isReconnectPending &&
-    remoteWorkspaceError?.trim(),
+    isDisconnectedRemoteWorkspace && !isReconnectPending && remoteWorkspaceError?.trim(),
   );
   const showReconnectAction = Boolean(isDisconnectedRemoteWorkspace);
-  const showFileTreeAction = Boolean(
-    onOpenFileTree && !isDisconnectedRemoteWorkspace,
-  );
-  const isVmBackedWorkspace = Boolean(
-    tab.remoteTarget && isVmBackedRemoteTarget(tab.remoteTarget),
-  );
+  const showFileTreeAction = Boolean(onOpenFileTree && !isDisconnectedRemoteWorkspace);
+  const isVmBackedWorkspace = Boolean(tab.remoteTarget && isVmBackedRemoteTarget(tab.remoteTarget));
   const { vmStatus, refreshVmStatus } = useVmRuntimeStatus({
     workspacePath: tab.workspacePath,
     enabled: isVmBackedWorkspace,
-    // 重连结束（无论成败）sessionId 或 pending 态都会变化：此刻 VM 事实可能已改
-    // （ensureUp 已拉起 / Stop 已执行），借此把徽章刷新到最新，避免失败后停在旧状态。
+    // A reconnect ending (either way) changes sessionId or the pending state: VM facts may have changed
+    // (ensureUp started it / Stop ran), so refresh the badge to the latest facts instead of a stale state after failures.
     refreshKey: `${tab.remoteSessionId ?? ""}|${isReconnectPending ? "pending" : "idle"}`,
   });
   const vmRuntimeBadgeState =
@@ -305,10 +268,9 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
           ? "stopped"
           : "starting"
       : null;
-  const showStopVmAction = Boolean(
-    isVmBackedWorkspace && vmStatus?.state === "running",
-  );
+  const showStopVmAction = Boolean(isVmBackedWorkspace && vmStatus?.state === "running");
   const [isVmStopPending, setIsVmStopPending] = useState(false);
+  const [vmSettingsOpen, setVmSettingsOpen] = useState(false);
   const showRemoteSkillSyncAction = shouldShowRemoteSyncActions({
     remoteSessionId: tab.remoteSessionId,
     remoteTarget: tab.remoteTarget,
@@ -336,10 +298,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   const shouldMountWorkspaceRowActions =
     // workspace action 以前常驻 DOM，仅靠 opacity 隐藏；相邻 tooltip 会在
     // 浮层定位完成前误认隐藏 trigger，短暂显示到错误位置。改为交互时挂载，菜单打开时保活。
-    workspaceRowHovered ||
-    workspaceRowFocusWithin ||
-    workspaceActionMenuOpen ||
-    isHoverNone;
+    workspaceRowHovered || workspaceRowFocusWithin || workspaceActionMenuOpen || isHoverNone;
   const remoteErrorCopyResetRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -390,23 +349,17 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     [onSelectTask, tab.workspaceIdentity, tab.workspacePath],
   );
 
-  const handleActionMouseDown = useCallback(
-    (event: MouseEvent<HTMLElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-    },
-    [],
-  );
+  const handleActionMouseDown = useCallback((event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
 
-  const handleActionMenuClick = useCallback(
-    (event: MouseEvent<HTMLElement>) => {
-      // DropdownMenuContent 虽然通过 Portal 渲染到行外，React 合成 click 仍会沿组件树
-      // 冒泡到外层 CollapsibleTrigger。收起的 workspace 点“移除”时，会先 closeTab，再被展开回调
-      // 当成“打开 workspace”重新 addTab，表现为删不掉。菜单层统一截断 click，保留菜单选择与键盘语义。
-      event.stopPropagation();
-    },
-    [],
-  );
+  const handleActionMenuClick = useCallback((event: MouseEvent<HTMLElement>) => {
+    // DropdownMenuContent 虽然通过 Portal 渲染到行外，React 合成 click 仍会沿组件树
+    // 冒泡到外层 CollapsibleTrigger。收起的 workspace 点“移除”时，会先 closeTab，再被展开回调
+    // 当成“打开 workspace”重新 addTab，表现为删不掉。菜单层统一截断 click，保留菜单选择与键盘语义。
+    event.stopPropagation();
+  }, []);
 
   const handleCreateThreadClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -417,12 +370,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
       }
       onStartDraftInWorkspace(tab.workspacePath, tab.workspaceIdentity);
     },
-    [
-      onStartDraftInWorkspace,
-      readOnlyReason,
-      tab.workspaceIdentity,
-      tab.workspacePath,
-    ],
+    [onStartDraftInWorkspace, readOnlyReason, tab.workspaceIdentity, tab.workspacePath],
   );
 
   const handleRemoveWorkspace = useCallback(async () => {
@@ -472,17 +420,12 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     invalidateTaskQueryCacheByScopes([
       {
         workspacePath: tab.workspacePath,
-        ...(tab.workspaceIdentity
-          ? { workspaceIdentity: tab.workspaceIdentity }
-          : {}),
+        ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
       },
     ]);
 
     if (!isRemoteWorkspace) {
-      void scanWindowsReservedDeviceNameFiles(
-        baseServices.fileService,
-        tab.workspacePath,
-      )
+      void scanWindowsReservedDeviceNameFiles(baseServices.fileService, tab.workspacePath)
         .then((result) => {
           if (result.findings.length === 0) {
             return;
@@ -539,8 +482,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     if (!platform.vmStop || isVmStopPending) {
       return;
     }
-    // Stop 是显式资源释放（释放 VM 占用的内存/CPU），端口保持 pin、下次重连一键恢复；
-    // 与移除 workspace 不同，这里确认文案聚焦“会停止 VM”而不是“会移除条目”。
+    // // Stop is an explicit resource release (frees the VM's RAM/CPUs); the port stays pinned and reconnect restores it in one click.
+    // // Unlike removing a workspace, the confirm copy focuses on stopping the VM, not removing the entry.
     const confirmed = await confirmDialog({
       title: intl.formatMessage({ id: "vm.stopConfirmTitle" }),
       description: intl.formatMessage({ id: "vm.stopConfirmDescription" }),
@@ -561,23 +504,12 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
         toast(result.error || intl.formatMessage({ id: "vm.stopFailed" }));
       }
     } catch (error) {
-      toast(
-        error instanceof Error
-          ? error.message
-          : intl.formatMessage({ id: "vm.stopFailed" }),
-      );
+      toast(error instanceof Error ? error.message : intl.formatMessage({ id: "vm.stopFailed" }));
     } finally {
       setIsVmStopPending(false);
       refreshVmStatus();
     }
-  }, [
-    confirmDialog,
-    intl,
-    isVmStopPending,
-    platform,
-    refreshVmStatus,
-    tab.workspacePath,
-  ]);
+  }, [confirmDialog, intl, isVmStopPending, platform, refreshVmStatus, tab.workspacePath]);
 
   const handleOpenWorkspaceFileTree = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -626,9 +558,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
           taskId,
           workspacePath: tab.workspacePath,
           title,
-          ...(tab.workspaceIdentity
-            ? { workspaceIdentity: tab.workspaceIdentity }
-            : {}),
+          ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
         });
       } catch (error) {
         logger.error("[WorkspaceSidebarItem] rename service call failed", {
@@ -645,11 +575,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
         workspaceIdentity: tab.workspaceIdentity,
         resolvedTitleLength: meta.title.length,
       });
-      upsertOptimisticTaskListItem(
-        tab.workspacePath,
-        meta,
-        tab.workspaceIdentity,
-      );
+      upsertOptimisticTaskListItem(tab.workspacePath, meta, tab.workspaceIdentity);
       if (tab.workspaceIdentity) {
         useRemoteTimelineTaskStore.getState().upsertTask(meta);
       }
@@ -709,15 +635,9 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
           taskId,
           workspacePath: tab.workspacePath,
           pinned,
-          ...(tab.workspaceIdentity
-            ? { workspaceIdentity: tab.workspaceIdentity }
-            : {}),
+          ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
         });
-        removeOptimisticTaskListItem(
-          tab.workspacePath,
-          taskId,
-          tab.workspaceIdentity,
-        );
+        removeOptimisticTaskListItem(tab.workspacePath, taskId, tab.workspaceIdentity);
         if (tab.workspaceIdentity && pinned) {
           useRemotePinnedTaskStore.getState().upsertTask(meta);
           useRemoteTimelineTaskStore
@@ -780,9 +700,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
       const meta = await zcodeTaskService.archiveTask({
         taskId,
         workspacePath: tab.workspacePath,
-        ...(tab.workspaceIdentity
-          ? { workspaceIdentity: tab.workspaceIdentity }
-          : {}),
+        ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
       });
       removeTaskState(tab.workspacePath, taskId, tab.workspaceIdentity);
       if (tab.workspaceIdentity) {
@@ -821,21 +739,10 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
         taskId,
         workspacePath: tab.workspacePath,
         unread,
-        ...(tab.workspaceIdentity
-          ? { workspaceIdentity: tab.workspaceIdentity }
-          : {}),
+        ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
       });
-      setTaskUnreadIndicator(
-        tab.workspacePath,
-        taskId,
-        unread,
-        tab.workspaceIdentity,
-      );
-      upsertOptimisticTaskListItem(
-        tab.workspacePath,
-        meta,
-        tab.workspaceIdentity,
-      );
+      setTaskUnreadIndicator(tab.workspacePath, taskId, unread, tab.workspaceIdentity);
+      upsertOptimisticTaskListItem(tab.workspacePath, meta, tab.workspaceIdentity);
       if (tab.workspaceIdentity) {
         useRemoteTimelineTaskStore.getState().upsertTask(meta);
       }
@@ -910,8 +817,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
         {workspaceSidebarLabel}
       </div>
       {vmRuntimeBadgeState ? (
-        // VM 状态徽章：状态事实来自 main 的 vmRuntimeProvider（非本地推测）。
-        // running 绿点 / stopped 空环 / starting 复用工作流“在动”的 warning 脉冲。
+        // // VM state badge: the state comes from main's vmRuntimeProvider (not local guesswork).
+        // // running = green dot / stopped = hollow ring / starting reuses the workflow in-motion warning pulse.
         <span
           data-vm-state={vmRuntimeBadgeState}
           className="flex shrink-0 items-center gap-1 text-ui-xs leading-none text-foreground-subtle"
@@ -949,10 +856,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
           )}
           className="flex shrink-0 items-center gap-1 text-ui-xs leading-none text-foreground-subtle"
         >
-          <span
-            aria-hidden="true"
-            className={cn("size-1.5 rounded-full", STATUS_DOT.running)}
-          />
+          <span aria-hidden="true" className={cn("size-1.5 rounded-full", STATUS_DOT.running)} />
           {taskListLiveWorkflowCount > 1 ? taskListLiveWorkflowCount : null}
         </span>
       ) : null}
@@ -1022,11 +926,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                 onMouseLeave={() => setWorkspaceRowHovered(false)}
                 onFocusCapture={() => setWorkspaceRowFocusWithin(true)}
                 onBlurCapture={(event) => {
-                  if (
-                    !event.currentTarget.contains(
-                      event.relatedTarget as Node | null,
-                    )
-                  ) {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                     setWorkspaceRowFocusWithin(false);
                   }
                 }}
@@ -1036,9 +936,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                 {sshWorkspaceTooltipDetails ? (
                   <TooltipProvider>
                     <Tooltip>
-                      <TooltipTrigger asChild>
-                        {workspaceLabelContent}
-                      </TooltipTrigger>
+                      <TooltipTrigger asChild>{workspaceLabelContent}</TooltipTrigger>
                       <TooltipContent
                         side="right"
                         align="start"
@@ -1099,9 +997,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                         open={workspaceActionMenuOpen}
                         onOpenChange={setWorkspaceActionMenuOpen}
                       >
-                        <ControlHintTooltip
-                          title={intl.formatMessage({ id: "common.more" })}
-                        >
+                        <ControlHintTooltip title={intl.formatMessage({ id: "common.more" })}>
                           <DropdownMenuTrigger asChild>
                             <Button
                               type="button"
@@ -1117,10 +1013,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                             </Button>
                           </DropdownMenuTrigger>
                         </ControlHintTooltip>
-                        <DropdownMenuContent
-                          align="end"
-                          onClick={handleActionMenuClick}
-                        >
+                        <DropdownMenuContent align="end" onClick={handleActionMenuClick}>
                           <RemoteSyncMenuItems
                             canSyncSkills={showRemoteSkillSyncAction}
                             canSyncMcp={showRemoteSkillSyncAction}
@@ -1128,10 +1021,25 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                             stopMouseDownPropagation
                             onOpenSkillSync={() => setRemoteSkillSyncOpen(true)}
                             onOpenMcpSync={() => setRemoteMcpSyncOpen(true)}
-                            onOpenPluginSync={() =>
-                              setRemotePluginSyncOpen(true)
-                            }
+                            onOpenPluginSync={() => setRemotePluginSyncOpen(true)}
                           />
+                          {isVmBackedWorkspace ? (
+                            <DropdownMenuItem
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                              }}
+                              onSelect={(event) => {
+                                event.preventDefault();
+                                setVmSettingsOpen(true);
+                              }}
+                            >
+                              <SlidersHorizontal className="h-3.5 w-3.5" />
+                              {intl.formatMessage({
+                                id: "workspaceSidebar.vmSettings",
+                              })}
+                            </DropdownMenuItem>
+                          ) : null}
                           {showStopVmAction ? (
                             <DropdownMenuItem
                               disabled={isVmStopPending}
@@ -1151,10 +1059,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                             </DropdownMenuItem>
                           ) : null}
                           <DropdownMenuItem
-                            data-testid={testId(
-                              TID_WORKSPACE_CLOSE,
-                              tab.workspacePath,
-                            )}
+                            data-testid={testId(TID_WORKSPACE_CLOSE, tab.workspacePath)}
                             onMouseDown={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
@@ -1185,10 +1090,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                           onClick={handleOpenWorkspaceFileTree}
                           showTooltip
                           disabledReason={readOnlyReason}
-                          testId={testId(
-                            TID_WORKSPACE_FILE_TREE_BUTTON,
-                            tab.workspacePath,
-                          )}
+                          testId={testId(TID_WORKSPACE_FILE_TREE_BUTTON, tab.workspacePath)}
                         >
                           <ListTree className="h-3.5 w-3.5" />
                         </TaskRowActionButton>
@@ -1272,9 +1174,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                     ) : null}
                     {showReconnectAction ? (
                       isReconnectPending ? (
-                        <ReconnectingRemoteWorkspaceLogTooltip
-                          logs={reconnectRuntimeLogs}
-                        >
+                        <ReconnectingRemoteWorkspaceLogTooltip logs={reconnectRuntimeLogs}>
                           {/* SSH workspace 重连中时，右侧原本只有 spinning 图标，
                               用户无法在聊天页任务列表里确认连接卡在哪一步。这里复用 SSH dialog 的连接日志 tooltip，
                               保持行内布局稳定，同时把诊断信息放到 hover 浮层里。 */}
@@ -1320,10 +1220,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                       )
                     ) : shouldMountWorkspaceRowActions ? (
                       <ControlHintTooltip
-                        title={
-                          readOnlyReason ??
-                          intl.formatMessage({ id: "taskList.newThread" })
-                        }
+                        title={readOnlyReason ?? intl.formatMessage({ id: "taskList.newThread" })}
                       >
                         <Button
                           type="button"
@@ -1430,6 +1327,14 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
           });
         }}
       />
+      {isVmBackedWorkspace ? (
+        <VmSettingsDialog
+          open={vmSettingsOpen}
+          onOpenChange={setVmSettingsOpen}
+          workspacePath={tab.workspacePath}
+          onReconfigured={refreshVmStatus}
+        />
+      ) : null}
     </li>
   );
 });
