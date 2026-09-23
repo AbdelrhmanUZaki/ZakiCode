@@ -8,7 +8,7 @@
   <a href="https://discord.gg/z9aBcQXZQ3">Discord</a>
 </p>
 <p align="center">
-  简体中文 | <a href="README.en.md">English</a>
+  简体中文 | <a href="README.en.md">English</a> | <a href="README.ar.md">العربية</a>
 </p>
 
 ZakiCode 是 ZCode 的个人分支（得名自作者 Abdelrahman Zaki），聚焦于为 Agent 提供沙箱隔离的工作区运行时。上游的 ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Agent。本仓库包含客户端、后端服务、共享 UI，以及 Agent CLI 与运行时源码。

@@ -8,7 +8,7 @@
   <a href="https://discord.gg/z9aBcQXZQ3">Discord</a>
 </p>
 <p align="center">
-  <a href="README.md">简体中文</a> | English
+  <a href="README.md">简体中文</a> | English | <a href="README.ar.md">العربية</a>
 </p>
 
 ZakiCode is a personal fork of ZCode (named after its author, Abdelrahman Zaki), focused on sandbox-isolated runtimes for agent workspaces. Upstream ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. This repository contains the clients, backend services, shared UI, and Agent CLI and runtime source code.
