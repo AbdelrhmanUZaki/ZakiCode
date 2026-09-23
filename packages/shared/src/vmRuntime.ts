@@ -1,42 +1,36 @@
 /**
- * agent-vm 沙箱 VM 运行时契约。
+ * agent-vm sandbox VM runtime contract.
  *
- * 状态唯一所有者是 desktop main 的 vmRuntimeProvider（直连 agent-vm/limactl），
- * renderer 只通过 IPC 读取结果；本文件只描述协议形状，不承载逻辑。
+ * The single state owner is desktop main's vmRuntimeProvider (talking to agent-vm/limactl directly);
+ * the renderer only reads results over IPC. This file describes protocol shapes and carries no logic.
  */
 
-/** VM 生命周期状态。creating/starting 只在 ensureUp 过程中短暂出现，查询侧通常只见 none/running/stopped。 */
-export const VM_RUNTIME_STATES = [
-  "none",
-  "creating",
-  "starting",
-  "running",
-  "stopped",
-] as const;
+/** VM lifecycle states. creating/starting appear only briefly during ensureUp; queries usually see none/running/stopped. */
+export const VM_RUNTIME_STATES = ["none", "creating", "starting", "running", "stopped"] as const;
 export type VmRuntimeState = (typeof VM_RUNTIME_STATES)[number];
 
-/** VM 创建时的资源规格；字段缺省 = agent-vm 默认（3 GB / 1 CPU / 10 GB 磁盘）。 */
+/** Resource spec at VM creation; absent fields mean agent-vm defaults (3 GB / 1 CPU / 10 GB disk). */
 export interface VmResourceSpec {
   memoryGb?: number;
   cpus?: number;
   diskGb?: number;
 }
 
-/** 规格静态上限（UI 在此之上再按宿主实际资源给出软警告）。 */
+/** Static spec bounds (the UI additionally soft-warns against actual host resources). */
 export const VM_RESOURCE_SPEC_LIMITS = {
   memoryGb: { min: 1, max: 8 },
   cpus: { min: 1, max: 16 },
   diskGb: { min: 5, max: 60 },
 } as const;
 
-/** SSH target 由本机 agent-vm/Lima VM 承载的标记。provider 固定为 agent-vm，预留未来扩展。
- * 规格字段只在创建时消费（ensureUp spec）；重连不改既有实例（调整走 vmReconfigure）。 */
+/** Marks an SSH target backed by a local agent-vm/Lima VM. The provider is fixed to agent-vm; reserved for future extension.
+ * Spec fields are consumed at creation only (ensureUp spec); reconnect never resizes an existing instance (use vmReconfigure). */
 export interface RemoteVmTargetInfo extends VmResourceSpec {
   provider: "agent-vm";
   vmName: string;
 }
 
-/** 可连接的 VM SSH endpoint。port 每次由 provider 从 lima.yaml 读回，调用方不得持久化后盲信。 */
+/** A connectable VM SSH endpoint. The port is read back from lima.yaml every time; callers must not blindly trust a persisted value. */
 export interface VmRuntimeEndpoint {
   vm: string;
   alias: string;
@@ -46,8 +40,7 @@ export interface VmRuntimeEndpoint {
   privateKeyPath: string;
 }
 
-export type VmRuntimeUnavailabilityReason =
-  "missing-agent-vm" | "missing-limactl";
+export type VmRuntimeUnavailabilityReason = "missing-agent-vm" | "missing-limactl";
 
 export interface VmRuntimeStatusRequest {
   workspacePath: string;
@@ -60,16 +53,16 @@ export interface VmRuntimeStatus {
   vm?: string;
   alias?: string;
   port?: number;
-  /** 实例当前实际规格（来自 limactl list；设置面板以此为准，不读 marker）。 */
+  /** The instance's actual specs (from limactl list; the settings panel trusts this, not the marker). */
   memoryGb?: number;
   cpus?: number;
   diskGb?: number;
-  /** 基础镜像是否就绪（机器级事实，仅在 VM 不存在时探测）；缺镜像时首次创建前会自动构建。 */
+  /** Whether the base image is ready (machine-level fact, probed only when the VM does not exist); it is built automatically before a first create. */
   templateReady?: boolean;
 }
 
-/** 宿主资源快照：availableMemoryGb 取内核 MemAvailable（已排除不可回收页）；
- * 在跑 VM 的整额分配单列在 runningVms，由 UI 作为提示展示而非从可用值中扣除。 */
+/** Host resources snapshot: availableMemoryGb is the kernel's MemAvailable (unreclaimable pages already excluded);
+ * running VMs' full allocations are listed separately in runningVms as UI context, not subtracted from the available value. */
 export interface VmHostResources {
   totalMemoryGb: number;
   availableMemoryGb: number;
@@ -78,12 +71,38 @@ export interface VmHostResources {
   runningVms: Array<{ vm: string; memoryGb: number; cpus: number }>;
 }
 
+/** Base image preinstall tool choice (one-time, machine-level; maps to agent-vm setup --preinstall).
+ * preset "default" = agent-vm's default set (everything except Ruby/Rust/Go, including the agent CLIs);
+ *         "minimal" = the minimal dev set (python,node,docker,gh, no agent CLIs);
+ *         with "custom", customList is passed through verbatim. */
+export interface VmTemplateToolsChoice {
+  preset: "default" | "minimal" | "custom";
+  /** Consumed only when preset === "custom": comma-separated agent-vm tool names. */
+  customList?: string;
+}
+
+export const VM_TEMPLATE_MINIMAL_PREINSTALL = "python,node,docker,gh";
+
+/** Map the choice to a --preinstall value; invalid input falls back to agent-vm's default (no flag). */
+export function resolveVmTemplatePreinstall(choice?: VmTemplateToolsChoice): string | undefined {
+  if (!choice || choice.preset === "default") {
+    return undefined;
+  }
+  if (choice.preset === "minimal") {
+    return VM_TEMPLATE_MINIMAL_PREINSTALL;
+  }
+  const list = choice.customList?.trim();
+  return list && /^[a-z0-9,-]+$/i.test(list) ? list : undefined;
+}
+
 export interface VmEnsureUpRequest {
   workspacePath: string;
-  /** 复用远程连接日志面板的 requestId，让 VM 启动行与连接日志流在同一处展示。 */
+  /** Reuse the remote-connection log panel's requestId so VM boot lines and connection logs stream in one place. */
   requestId?: string;
-  /** 仅在首次创建时生效；VM 已存在时忽略并记一行日志。 */
+  /** Applies on first create only; ignored with a log line when the VM already exists. */
   spec?: VmResourceSpec;
+  /** Applies only for a first create with the base image missing: the base image preinstall choice. */
+  templateTools?: VmTemplateToolsChoice;
 }
 
 export interface VmEnsureUpResult {
@@ -101,18 +120,18 @@ export interface VmStopResult {
   error?: string;
 }
 
-/** 调整既有 VM 的规格：agent-vm --reset 重克隆 + 重新 pin 端口 + 启动。 */
+/** Resize an existing VM: agent-vm --reset re-clone + re-pin the port + start. */
 export interface VmReconfigureRequest {
   workspacePath: string;
   spec: VmResourceSpec;
   requestId?: string;
 }
 
-/** agent-vm 私钥在宿主机上的固定位置（Lima 托管，vmup/agent-vm 共用）。 */
+/** The agent-vm private key's fixed host location (Lima-managed, shared by vmup/agent-vm). */
 const AGENT_VM_PRIVATE_KEY_SUFFIX = ".lima/_config/user";
 const AGENT_VM_ALIAS_PREFIX = "vm-";
 
-/** SSH target / snapshot 的结构子集，isVmBackedRemoteTarget 只读这些字段。 */
+/** Structural subset of an SSH target/snapshot; isVmBackedRemoteTarget only reads these fields. */
 interface VmBackedTargetLike {
   kind: string;
   host?: string;
@@ -122,11 +141,11 @@ interface VmBackedTargetLike {
 }
 
 /**
- * 判断 target 是否由本机 agent-vm VM 承载。
+ * Whether a target is backed by a local agent-vm VM.
  *
- * 新条目带显式 `vm` 标记；旧向导建立的条目没有标记，只能按 agent-vm 独有特征
- * （127.0.0.1 + Lima 托管私钥 + vm- alias）识别，三者缺一不可，避免误判后
- * ensureUp 在普通 SSH 目录上凭空创建 VM。
+ * New entries carry an explicit `vm` marker; legacy wizard entries do not, and are recognized only by
+ * agent-vm-specific traits (127.0.0.1 + the Lima-managed key + a vm- alias). All three are required so
+ ensureUp never conjures a VM for an ordinary SSH directory.
  */
 export function isVmBackedRemoteTarget(target: VmBackedTargetLike): boolean {
   if (target.kind !== "ssh") {

@@ -1,15 +1,15 @@
 /**
- * agent-vm 沙箱 VM runtime provider —— vmup 脚本逻辑的 TypeScript 移植。
+ * agent-vm sandbox VM runtime provider — a TypeScript port of the vmup script's logic.
  *
- * 原因与依据：vmup（~/vmup/vmup）为 120 行 bash，
- * 只做四件事：按路径派生 VM/alias、pin SSH 端口、调用 agent-vm/limactl 生命周期、
- * 维护 ~/.ssh/config 受管 alias 块。这里按 docs/plan-open-in-vm.md §2.1 原样移植，
- * 端口算法与 ssh config 标记必须与脚本字节兼容（双写者可互换，见计划 R6）。
+ * Rationale: vmup is a 120-line bash script doing four things — derive VM/alias from the path,
+ * pin the SSH port, drive the agent-vm/limactl lifecycle, and maintain the managed
+ * ~/.ssh/config alias block. Ported verbatim per docs/plan-open-in-vm.md §2.1;
+ * the port algorithm and ssh-config markers must stay byte-compatible with the script (dual writers, see R6).
  *
- * 状态所有者：本模块（desktop main）。renderer 只通过 IPC 读取结果。
- * 生命周期序列在 vmRuntimeLifecycle.ts；实例清单/宿主资源在 vmRuntimeHostResources.ts；
- * 进程执行底座在 vmRuntimeProcess.ts；端口探测/pin 在 vmRuntimePort.ts；
- * ssh config 写入在 vmRuntimeSshConfig.ts。
+ * State owner: this module (desktop main). The renderer only reads results over IPC.
+ * Lifecycle sequences live in vmRuntimeLifecycle.ts; instance inventory/host resources in vmRuntimeHostResources.ts;
+ * process execution base in vmRuntimeProcess.ts; port probing/pinning in vmRuntimePort.ts;
+ * ssh config writes in vmRuntimeSshConfig.ts.
  */
 import type {
   VmEnsureUpResult,
@@ -17,14 +17,12 @@ import type {
   VmRuntimeStatus,
   VmRuntimeUnavailabilityReason,
   VmStopResult,
+  VmTemplateToolsChoice,
 } from "@zcode/shared";
 import { logger } from "./logger.js";
 import { readPinnedPort } from "./vmRuntimePort.js";
 import { describeCommandFailure, runVmCommand } from "./vmRuntimeProcess.js";
-import {
-  hostResources,
-  limactlListInstances,
-} from "./vmRuntimeHostResources.js";
+import { hostResources, limactlListInstances } from "./vmRuntimeHostResources.js";
 import {
   VM_STOP_TIMEOUT_MS,
   deriveVmAlias,
@@ -72,9 +70,7 @@ interface ResolvedVmIdentity {
   hashSegment: string;
 }
 
-async function resolveVmIdentity(
-  workspacePath: string,
-): Promise<ResolvedVmIdentity> {
+async function resolveVmIdentity(workspacePath: string): Promise<ResolvedVmIdentity> {
   const vmName = await resolveVmName(workspacePath);
   return {
     workspacePath,
@@ -88,7 +84,7 @@ function bytesToGb(bytes: number): number {
   return Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10;
 }
 
-/** 同一 workspace 的长耗时操作（ensureUp/reconfigure）共享单飞，避免 --reset 与 boot 交叠。 */
+/** Long operations per workspace (ensureUp/reconfigure) share one single-flight slot so --reset and boot never overlap. */
 const inflightByWorkspace = new Map<string, Promise<VmEnsureUpResult>>();
 
 function runSingleFlight(
@@ -123,10 +119,7 @@ function ensureTooling(
   return checkVmTooling().then((availability) => {
     const unavailability = resolveUnavailability(availability);
     if (unavailability) {
-      onLog(
-        `VM tooling unavailable (${unavailability}); install agent-vm and Lima first`,
-        "error",
-      );
+      onLog(`VM tooling unavailable (${unavailability}); install agent-vm and Lima first`, "error");
     }
     return unavailability;
   });
@@ -136,6 +129,7 @@ async function ensureUp(
   workspacePath: string,
   onLog: VmRuntimeLogLine = () => {},
   spec?: VmResourceSpec,
+  templateTools?: VmTemplateToolsChoice,
 ): Promise<VmEnsureUpResult> {
   return runSingleFlight(
     workspacePath,
@@ -148,9 +142,7 @@ async function ensureUp(
       }
       const identity = await resolveVmIdentity(workspacePath);
       const instances = await limactlListInstances();
-      const instance = instances.find(
-        (entry) => entry.name === identity.vmName,
-      );
+      const instance = instances.find((entry) => entry.name === identity.vmName);
       return ensureUpSequence(
         workspacePath,
         identity,
@@ -168,6 +160,7 @@ async function ensureUp(
               diskGb: bytesToGb(instance.diskBytes),
             }
           : undefined,
+        templateTools,
       );
     },
     onLog,
@@ -195,14 +188,11 @@ async function reconfigure(
   );
 }
 
-/** 基础镜像就绪查询（机器级事实）：30 s 缓存，避免面板每次打开都起子进程。 */
+/** Base image readiness probe (machine-level fact), cached 30 s so opening the panel does not spawn a subprocess each time. */
 let templateReadyCache: { value: boolean; checkedAt: number } | null = null;
 
 async function templateReady(workspacePath: string): Promise<boolean> {
-  if (
-    templateReadyCache &&
-    Date.now() - templateReadyCache.checkedAt < 30_000
-  ) {
+  if (templateReadyCache && Date.now() - templateReadyCache.checkedAt < 30_000) {
     return templateReadyCache.value;
   }
   const value = await readBaseTemplateExists(workspacePath);
@@ -228,11 +218,9 @@ async function status(workspacePath: string): Promise<VmRuntimeStatus> {
     return { available: true, state: "none" };
   }
 
-  const instance = (await limactlListInstances()).find(
-    (entry) => entry.name === identity.vmName,
-  );
+  const instance = (await limactlListInstances()).find((entry) => entry.name === identity.vmName);
   const state = mapLimaStatusToVmState(instance?.status);
-  // 面板只在“VM 不存在”时关心模板；其余状态跳过这次子进程查询。
+  // The panel only cares about the template when the VM does not exist; other states skip this subprocess query.
   const needsTemplateProbe = !instance || state === "none";
   const templateReadyValue = needsTemplateProbe
     ? await templateReady(workspacePath).catch(() => true)
@@ -253,7 +241,7 @@ async function status(workspacePath: string): Promise<VmRuntimeStatus> {
     vm: identity.vmName,
     alias: identity.alias,
     ...(port !== null ? { port } : {}),
-    // 实例实际规格是设置面板的唯一事实（marker 可能漂移，见计划 R5）。
+    // The instance's actual specs are the settings panel's source of truth (the marker can drift, see R5).
     memoryGb: bytesToGb(instance.memoryBytes),
     cpus: instance.cpus,
     diskGb: bytesToGb(instance.diskBytes),

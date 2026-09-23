@@ -1,12 +1,5 @@
 /* eslint-disable max-lines -- 远程连接向导的状态编排暂集中在同一组件，后续有独立拆分计划。 */
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   createUuid,
   type RemoteTarget,
@@ -14,6 +7,7 @@ import {
   type VmHostResources,
   type VmResourceSpec,
   type VmRuntimeEndpoint,
+  type VmTemplateToolsChoice,
 } from "@zcode/shared";
 import {
   TID_SSH_CONNECT_TRIGGER,
@@ -29,6 +23,7 @@ import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useRemoteConnectionForm } from "@/hooks/useRemoteConnectionForm.js";
 import { useRemoteConnectionLogs } from "@/hooks/useRemoteConnectionLogs.js";
+import { useVmHostResources } from "@/hooks/useVmHostResources.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import {
@@ -62,11 +57,7 @@ import type { VariantProps } from "class-variance-authority";
 
 interface RemoteConnectionDialogProps {
   onConnect: (options: RemoteTarget, requestId?: string) => Promise<string>;
-  onSelectProject: (
-    sessionId: string,
-    path: string,
-    localWorkspacePath?: string,
-  ) => Promise<void>;
+  onSelectProject: (sessionId: string, path: string, localWorkspacePath?: string) => Promise<void>;
   onCancelSession: (sessionId: string) => Promise<void>;
   localWorkspacePath?: string;
   trigger?: ReactNode;
@@ -83,8 +74,8 @@ interface RemoteConnectionDialogProps {
   preferredKind?: RemoteTarget["kind"];
   preferredWslDistro?: string;
   /**
-   * VM 模式入口：传入宿主项目目录后跳过 kind/settings 向导，
-   * 直接 ensureUp（agent-vm）→ 连接 → 以同路径（live mount）自动选定 workspace。
+   * VM mode entry: given a host project directory, skip the kind/settings wizard and go
+   * straight to ensureUp (agent-vm) → connect → auto-select the workspace at the same path (live mount).
    */
   vmWorkspacePath?: string | null;
 }
@@ -118,32 +109,34 @@ export function RemoteConnectionDialog({
   const [error, setError] = useState("");
   const [validationMessage, setValidationMessage] = useState("");
   const [currentStep, setCurrentStep] = useState<RemoteWizardStep>("kind");
-  const [connectedSessionId, setConnectedSessionId] = useState<string | null>(
-    null,
-  );
-  const [connectingRequestId, setConnectingRequestId] = useState<string | null>(
-    null,
-  );
-  const [pendingRemoteTarget, setPendingRemoteTarget] =
-    useState<RemoteTarget | null>(null);
+  const [connectedSessionId, setConnectedSessionId] = useState<string | null>(null);
+  const [connectingRequestId, setConnectingRequestId] = useState<string | null>(null);
+  const [pendingRemoteTarget, setPendingRemoteTarget] = useState<RemoteTarget | null>(null);
   const [selectingDirectory, setSelectingDirectory] = useState(false);
   const selectingDirectoryRef = useRef(false);
-  // VM 模式的 boot 流程只允许自动触发一次；关闭弹窗后重置，避免重开时立刻重启。
+  // The VM boot flow may auto-trigger once; reset on close so reopening does not instantly boot again.
   const vmFlowStartedRef = useRef(false);
-  // 记录上一次已启动 boot 的目录；变化即视为新流程，强制备位 vmFlowStartedRef。
+  // Remembers the directory whose boot last started; a change means a new flow, force-clearing vmFlowStartedRef.
   const vmStartedPathRef = useRef<string | null>(null);
-  // 首次创建的规格面板数据；非空时 connecting 步骤渲染面板而非日志流。
-  // templateReady 来自 vmStatus（机器级事实）：缺基础镜像时面板给出一次性构建提示。
+  // Spec panel data for a first create; when set, the connecting step renders the panel instead of the log stream.
+  // templateReady comes from vmStatus (machine-level fact): with the base image missing, the panel shows a one-time build notice.
   const [vmSpecPanel, setVmSpecPanel] = useState<{
     hostResources: VmHostResources;
     templateReady: boolean;
   } | null>(null);
-  // 面板确认过的规格：boot 失败重试时沿用，不再重新询问。
+  // The spec the panel confirmed: reused on boot retry instead of asking again.
   const lastVmSpecRef = useRef<VmResourceSpec | undefined>(undefined);
-  const { connectionLogs, resetConnectionLogs } =
-    useRemoteConnectionLogs(connectingRequestId);
+  const { connectionLogs, resetConnectionLogs } = useRemoteConnectionLogs(connectingRequestId);
   const open = controlledOpen ?? uncontrolledOpen;
   const vmMode = Boolean(vmWorkspacePath);
+  // Poll host resources while the spec panel is open (5s, plan-vm-specs 2.7): the panel waits on the user
+  // indefinitely, and a stale snapshot would size against outdated headroom. setVmSpecPanel stays the single write path.
+  useVmHostResources({
+    enabled: vmMode && vmSpecPanel !== null,
+    onResources: (resources) => {
+      setVmSpecPanel((panel) => (panel ? { ...panel, hostResources: resources } : panel));
+    },
+  });
   const {
     kind,
     host,
@@ -191,9 +184,7 @@ export function RemoteConnectionDialog({
     preferredWslDistro,
   });
   const directoryBrowserServices = useRemoteWorkspaceSessionStore((state) =>
-    connectedSessionId
-      ? (state.sessionsById[connectedSessionId]?.services ?? null)
-      : null,
+    connectedSessionId ? (state.sessionsById[connectedSessionId]?.services ?? null) : null,
   );
   const baseServices = useBaseWorkspaceServices();
   const flowSnapshot = useMemo(
@@ -211,9 +202,9 @@ export function RemoteConnectionDialog({
   }, [flowActive, onFlowActiveChange]);
 
   useEffect(() => {
-    // 兜底：新的 VM 目录意味着一次新流程，即使某个完成/取消路径忘了复位
-    // vmFlowStartedRef，这里按路径变化强制备位，保证 auto-start 总会触发。
-    // 必须声明在下方 auto-start effect 之前：同一次 commit 内先复位再判断。
+    // Backstop: a new VM directory means a new flow; even if a completion/cancel path forgets to clear
+    // vmFlowStartedRef, this force-clears it on path change so auto-start always fires.
+    // Must be declared before the auto-start effect below: clear first, then evaluate, within one commit.
     if (vmWorkspacePath && vmWorkspacePath !== vmStartedPathRef.current) {
       vmStartedPathRef.current = vmWorkspacePath;
       vmFlowStartedRef.current = false;
@@ -225,18 +216,13 @@ export function RemoteConnectionDialog({
   }, [vmWorkspacePath]);
 
   useEffect(() => {
-    // VM 模式：打开即自动引导（无需用户点击）。ref 防止 StrictMode 双执行重复起 VM。
-    if (
-      !open ||
-      !vmWorkspacePath ||
-      vmFlowStartedRef.current ||
-      currentStep !== "kind"
-    ) {
+    // VM mode: bootstrap automatically on open (no click needed). The ref guards against StrictMode double-invocation.
+    if (!open || !vmWorkspacePath || vmFlowStartedRef.current || currentStep !== "kind") {
       return;
     }
     vmFlowStartedRef.current = true;
     void bootstrapVmFlow(vmWorkspacePath);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrapVmFlow 每渲染重建，依赖 ref 去重
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrapVmFlow is rebuilt every render; the ref deduplicates
   }, [open, vmWorkspacePath, currentStep]);
 
   const updateConnectingRequestId = useCallback(
@@ -283,11 +269,7 @@ export function RemoteConnectionDialog({
       const sessionId = connectedSessionId;
       if (!options?.preserveSession && sessionId) {
         void handleCancelSession(sessionId);
-      } else if (
-        !options?.preserveSession &&
-        loading &&
-        currentStep === "connecting"
-      ) {
+      } else if (!options?.preserveSession && loading && currentStep === "connecting") {
         // 连接过程里 sessionId 尚未返回时，关闭弹窗会只重置 UI；这里补上显式取消，确保后台下载同步停止。
         void cancelPendingRemoteConnection(connectingRequestId ?? undefined);
       }
@@ -372,8 +354,7 @@ export function RemoteConnectionDialog({
     });
     try {
       const sessionId = await onConnect(nextTarget, requestId);
-      const completionState =
-        getRemoteConnectionCompletionDialogState("success");
+      const completionState = getRemoteConnectionCompletionDialogState("success");
       setConnectedSessionId(sessionId);
       setCurrentStep(completionState.step);
       applyOpenState(completionState.open);
@@ -390,10 +371,7 @@ export function RemoteConnectionDialog({
     }
   };
 
-  const buildVmRemoteTarget = (
-    endpoint: VmRuntimeEndpoint,
-    spec?: VmResourceSpec,
-  ): RemoteTarget =>
+  const buildVmRemoteTarget = (endpoint: VmRuntimeEndpoint, spec?: VmResourceSpec): RemoteTarget =>
     withDefaultRemoteResourcePackages({
       kind: "ssh",
       host: endpoint.host,
@@ -402,7 +380,7 @@ export function RemoteConnectionDialog({
       sshConfigAlias: endpoint.alias,
       privateKeyPath: endpoint.privateKeyPath,
       assetInstallMode: "local-download-upload",
-      // 规格字段由发起方（本面板/设置面板）持有并随 marker 落库；重连不消费它们。
+      // Spec fields are held by the initiator (this panel / settings panel) and persisted with the marker; reconnect ignores them.
       vm: {
         provider: "agent-vm",
         vmName: endpoint.vm,
@@ -412,11 +390,12 @@ export function RemoteConnectionDialog({
       },
     });
 
-  // VM 模式主流程：ensureUp 的启动日志与 SSH 连接日志共用同一个 requestId，
-  // connecting 步骤的日志面板能按时间顺序展示“VM 启动 → 建立连接”的完整流水。
+  // VM flow: ensureUp boot logs and the SSH connection logs share one requestId, so the connecting
+  // step's log panel shows the full timeline of VM boot → connection in order.
   const startVmRemoteConnection = async (
     workspacePath: string,
     spec?: VmResourceSpec,
+    templateTools?: VmTemplateToolsChoice,
   ) => {
     if (loading) {
       return;
@@ -435,17 +414,19 @@ export function RemoteConnectionDialog({
     resetConnectionLogs();
     setCurrentStep("connecting");
     try {
-      const boot = await vmEnsureUp({ workspacePath, requestId, spec });
+      const boot = await vmEnsureUp({
+        workspacePath,
+        requestId,
+        spec,
+        templateTools,
+      });
       if (!boot.success || !boot.endpoint) {
-        throw new Error(
-          boot.error || intl.formatMessage({ id: "vm.runtime.bootFailed" }),
-        );
+        throw new Error(boot.error || intl.formatMessage({ id: "vm.runtime.bootFailed" }));
       }
       const nextTarget = buildVmRemoteTarget(boot.endpoint, spec);
       setPendingRemoteTarget(nextTarget);
       const sessionId = await onConnect(nextTarget, requestId);
-      const completionState =
-        getRemoteConnectionCompletionDialogState("success");
+      const completionState = getRemoteConnectionCompletionDialogState("success");
       setConnectedSessionId(sessionId);
       setCurrentStep(completionState.step);
       applyOpenState(completionState.open);
@@ -460,8 +441,8 @@ export function RemoteConnectionDialog({
     }
   };
 
-  // VM 模式引导：先探测 VM 是否存在——不存在（首次创建）则先给规格面板，
-  // 让用户带着宿主真实余量做一次性决定；已存在则维持零点击直启。
+  // VM bootstrap: probe whether the VM exists — if not (first create), show the spec panel first so the
+  // user makes the one-time sizing decision against real host headroom; if it exists, keep the zero-click direct start.
   const bootstrapVmFlow = async (workspacePath: string) => {
     const vmStatusQuery = platform.vmStatus;
     if (!vmStatusQuery || !platform.vmHostResources) {
@@ -474,7 +455,7 @@ export function RemoteConnectionDialog({
       const status = await vmStatusQuery({ workspacePath });
       if (status.state === "none") {
         const hostResources = await platform.vmHostResources();
-        // 面板等待用户决定，必须先解除 loading，否则 Start 会被并发保护拦下。
+        // The panel waits for the user, so loading must clear first or Start gets blocked by the concurrency guard.
         setLoading(false);
         setVmSpecPanel({
           hostResources,
@@ -483,7 +464,7 @@ export function RemoteConnectionDialog({
         return;
       }
     } catch {
-      // 探测失败按既有 VM 处理：直接 ensureUp（幂等，能自愈大多数状态）。
+      // // Probe failure is treated as an existing VM: go straight to ensureUp (idempotent, self-heals most states).
     }
     void startVmRemoteConnection(workspacePath);
   };
@@ -566,8 +547,8 @@ export function RemoteConnectionDialog({
         setCurrentStep("kind");
         setConnectedSessionId(null);
         setPendingRemoteTarget(null);
-        // VM 模式的完成路径不走 closeDialog；这里必须复位一次性标记，
-        // 否则第二次 "Open folder in VM" 打开后 auto-start 被旧 ref 拦截，弹窗停在空白 kind 步骤。
+        // The VM flow's completion path bypasses closeDialog; the one-shot flag must be cleared here,
+        // otherwise a second Open-folder-in-VM is blocked by the stale ref and the dialog opens on a blank kind step.
         vmFlowStartedRef.current = false;
         setVmSpecPanel(null);
         updateConnectingRequestId(null);
@@ -577,9 +558,7 @@ export function RemoteConnectionDialog({
           connectedSessionId,
           // 事件处理器只在失败时读取一次最新 snapshot，避免为了回调判断新增重复 Zustand 订阅。
           sessionStillRegistered: Boolean(
-            useRemoteWorkspaceSessionStore.getState().sessionsById[
-              connectedSessionId
-            ],
+            useRemoteWorkspaceSessionStore.getState().sessionsById[connectedSessionId],
           ),
         });
         if (!failureState.connectedSessionId) {
@@ -603,17 +582,13 @@ export function RemoteConnectionDialog({
 
   const vmWorkspaceAutoSelectPath = vmMode ? vmWorkspacePath : null;
   useEffect(() => {
-    // VM 是同路径 live mount：连接成功后直接以宿主路径选定 workspace，跳过远端目录浏览步骤。
-    // 依赖 handleSelectDirectory 的 connectedSessionId 提交后状态，effect 在下一拍拿到非空 sessionId。
-    if (
-      currentStep !== "directory" ||
-      !connectedSessionId ||
-      !vmWorkspaceAutoSelectPath
-    ) {
+    // // The VM is a same-path live mount: after connecting, select the workspace at the host path directly, skipping the remote directory browser.
+    // // Relies on handleSelectDirectory committing connectedSessionId; the effect picks up the non-empty sessionId on the next tick.
+    if (currentStep !== "directory" || !connectedSessionId || !vmWorkspaceAutoSelectPath) {
       return;
     }
     void handleSelectDirectory(vmWorkspaceAutoSelectPath);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSelectDirectory 依赖已由 currentStep/connectedSessionId 覆盖
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSelectDirectory's deps are covered by currentStep/connectedSessionId
   }, [currentStep, connectedSessionId, vmWorkspaceAutoSelectPath]);
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -770,10 +745,10 @@ export function RemoteConnectionDialog({
                     workspacePath={vmWorkspacePath ?? ""}
                     hostResources={vmSpecPanel.hostResources}
                     templateReady={vmSpecPanel.templateReady}
-                    onStart={(spec) => {
+                    onStart={(spec, templateTools) => {
                       lastVmSpecRef.current = spec;
                       if (vmWorkspacePath) {
-                        void startVmRemoteConnection(vmWorkspacePath, spec);
+                        void startVmRemoteConnection(vmWorkspacePath, spec, templateTools);
                       }
                     }}
                     onCancel={() => {
@@ -791,13 +766,12 @@ export function RemoteConnectionDialog({
                     onBack={
                       vmMode
                         ? () => {
-                            // VM 模式没有 settings 步骤可退；返回即放弃本次 boot/连接。
+                            // // VM mode has no settings step to go back to; backing out abandons this boot/connect.
                             void handleCloseRequest();
                           }
                         : () => {
                             void (async () => {
-                              const confirmed =
-                                await confirmRemoteFlowDiscard();
+                              const confirmed = await confirmRemoteFlowDiscard();
                               if (!confirmed) {
                                 return;
                               }
@@ -818,10 +792,7 @@ export function RemoteConnectionDialog({
                       vmMode
                         ? () => {
                             if (vmWorkspacePath) {
-                              void startVmRemoteConnection(
-                                vmWorkspacePath,
-                                lastVmSpecRef.current,
-                              );
+                              void startVmRemoteConnection(vmWorkspacePath, lastVmSpecRef.current);
                             }
                           }
                         : () => {
@@ -837,21 +808,13 @@ export function RemoteConnectionDialog({
                       services={directoryBrowserServices}
                       remoteTarget={pendingRemoteTarget}
                       localSkillSyncService={baseServices.skillSyncService}
-                      remoteSkillSyncService={
-                        directoryBrowserServices?.skillSyncService ?? null
-                      }
+                      remoteSkillSyncService={directoryBrowserServices?.skillSyncService ?? null}
                       localMcpSyncService={baseServices.mcpSyncService}
-                      remoteMcpSyncService={
-                        directoryBrowserServices?.mcpSyncService ?? null
-                      }
+                      remoteMcpSyncService={directoryBrowserServices?.mcpSyncService ?? null}
                       localPluginSyncService={baseServices.pluginSyncService}
-                      remotePluginSyncService={
-                        directoryBrowserServices?.pluginSyncService ?? null
-                      }
+                      remotePluginSyncService={directoryBrowserServices?.pluginSyncService ?? null}
                       localZCodeAgentService={baseServices.zcodeAgentService}
-                      remoteZCodeAgentService={
-                        directoryBrowserServices?.zcodeAgentService ?? null
-                      }
+                      remoteZCodeAgentService={directoryBrowserServices?.zcodeAgentService ?? null}
                       localWorkspacePath={localWorkspacePath}
                       selecting={selectingDirectory}
                       onSelect={(path) => {
