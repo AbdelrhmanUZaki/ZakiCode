@@ -1,3 +1,7 @@
+## 语言（Language）
+
+- This fork is English-only for authored content: code comments, commit messages, docs, and plans written here are in English. Upstream's existing Chinese comments are left as-is; do not translate or churn them.
+
 ## 核心原则
 
 - 新增或修改行为前，先更新对应 spec；目录不存在时按需创建。先明确产品规则、状态所有者、接口和验收场景，再实现代码。
