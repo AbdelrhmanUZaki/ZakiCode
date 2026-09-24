@@ -1551,10 +1551,10 @@ const zhCN: Record<string, string> = {
     "启动时会先构建基础镜像（约 10 分钟），预装默认工具集；之后所有项目 VM 都从它克隆。仅此一次。",
   "vm.template.building": "正在构建基础镜像…",
   "vm.template.toolsTitle": "基础镜像预装工具",
-  "vm.template.presetDefaultLabel": "默认集（推荐）",
+  "vm.template.presetDefaultLabel": "完整集（agent-vm 默认）",
   "vm.template.presetDefaultDesc":
     "开发工具（python、node、docker、gh、chromium…）加预装的各种 AI agent CLI，与 agent-vm 交互式默认一致。",
-  "vm.template.presetMinimalLabel": "精简开发集",
+  "vm.template.presetMinimalLabel": "精简开发集（推荐）",
   "vm.template.presetMinimalDesc":
     "python、node、docker、gh——不含 AI agent CLI。agent-vm 的常驻核心工具（git、ripgrep、build-essential…）任何镜像都自带。",
   "vm.template.presetCustomLabel": "自定义列表",

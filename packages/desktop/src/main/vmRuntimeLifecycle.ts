@@ -101,7 +101,9 @@ export async function ensureBaseTemplate(
     return;
   }
   const preinstall = resolveVmTemplatePreinstall(templateTools);
-  const toolSummary = preinstall ? `preinstall: ${preinstall}` : "default tool set";
+  const toolSummary = preinstall
+    ? `preinstall: ${preinstall}`
+    : "agent-vm full default set (includes the AI-agent CLIs)";
   onLog(`==> Building base image (one-time, can take 10-30 min; ${toolSummary})`);
   const args = preinstall ? ["setup", `--preinstall=${preinstall}`] : ["setup"];
   const result = await runAgentVm(args, {

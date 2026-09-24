@@ -1669,10 +1669,10 @@ const enUS: Record<string, string> = {
     "Starting will build the base image first (~10 min) with the default tool set preinstalled; afterwards every project VM clones it. This happens only once.",
   "vm.template.building": "Building base image…",
   "vm.template.toolsTitle": "Base image tools",
-  "vm.template.presetDefaultLabel": "Default set (recommended)",
+  "vm.template.presetDefaultLabel": "Full set (agent-vm default)",
   "vm.template.presetDefaultDesc":
     "Dev tools (python, node, docker, gh, chromium…) plus preinstalled AI-agent CLIs. Same as agent-vm's interactive default.",
-  "vm.template.presetMinimalLabel": "Minimal dev set",
+  "vm.template.presetMinimalLabel": "Minimal dev set (recommended)",
   "vm.template.presetMinimalDesc":
     "python, node, docker, gh — no AI-agent CLIs. agent-vm's always-on core tools (git, ripgrep, build-essential…) are included in every image.",
   "vm.template.presetCustomLabel": "Custom list",

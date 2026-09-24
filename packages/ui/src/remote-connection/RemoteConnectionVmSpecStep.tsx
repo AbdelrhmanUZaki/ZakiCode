@@ -35,7 +35,7 @@ export function RemoteConnectionVmSpecStep({
   const [cpus, setCpus] = useState(1);
   const [diskGb, setDiskGb] = useState(10);
   const [toolsOpen, setToolsOpen] = useState(false);
-  const [toolsPreset, setToolsPreset] = useState<VmTemplateToolsChoice["preset"]>("default");
+  const [toolsPreset, setToolsPreset] = useState<VmTemplateToolsChoice["preset"]>("minimal");
   const [toolsCustomList, setToolsCustomList] = useState("");
 
   const runningVmNote =

@@ -72,8 +72,9 @@ export interface VmHostResources {
 }
 
 /** Base image preinstall tool choice (one-time, machine-level; maps to agent-vm setup --preinstall).
- * preset "default" = agent-vm's default set (everything except Ruby/Rust/Go, including the agent CLIs);
- *         "minimal" = the minimal dev set (python,node,docker,gh, no agent CLIs);
+ * preset "minimal" = the recommended dev set (python,node,docker,gh, no AI-agent CLIs) — also the
+ *         fallback when no choice reaches the provider;
+ *         "default" = agent-vm's full default set (everything except Ruby/Rust/Go, including the agent CLIs);
  *         with "custom", customList is passed through verbatim. */
 export interface VmTemplateToolsChoice {
   preset: "default" | "minimal" | "custom";
@@ -83,13 +84,16 @@ export interface VmTemplateToolsChoice {
 
 export const VM_TEMPLATE_MINIMAL_PREINSTALL = "python,node,docker,gh";
 
-/** Map the choice to a --preinstall value; invalid input falls back to agent-vm's default (no flag). */
+/** Map the choice to a --preinstall value. No choice resolves to the minimal dev set:
+ * ZakiCode ships its own agent runtime, so the AI-agent CLIs in agent-vm's full
+ * default set are dead weight on a fresh machine. Invalid custom input falls back
+ * to the minimal set as well. */
 export function resolveVmTemplatePreinstall(choice?: VmTemplateToolsChoice): string | undefined {
-  if (!choice || choice.preset === "default") {
-    return undefined;
-  }
-  if (choice.preset === "minimal") {
+  if (!choice || choice.preset === "minimal") {
     return VM_TEMPLATE_MINIMAL_PREINSTALL;
+  }
+  if (choice.preset === "default") {
+    return undefined;
   }
   const list = choice.customList?.trim();
   return list && /^[a-z0-9,-]+$/i.test(list) ? list : undefined;
