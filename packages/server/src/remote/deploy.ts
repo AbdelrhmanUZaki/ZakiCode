@@ -25,7 +25,10 @@ import {
   type RemoteAssetDeployOptions,
 } from "@zcode/server/remote/deployShared.js";
 import { quotePosixPathArg } from "@zcode/server/remote/posixShell.js";
-import { checkServerBundleRequiredMarkers } from "@zcode/server/remote/serverBundleDeployCheck.js";
+import {
+  checkServerBundleRequiredMarkers,
+  FORK_SERVER_BUNDLE_MARKERS,
+} from "@zcode/server/remote/serverBundleDeployCheck.js";
 import { deployRuntimeTools } from "@zcode/server/remote/runtimeToolDeploy.js";
 import { REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS } from "@zcode/server/remote/zcodeAgentOfficialPluginAssets.js";
 import {
@@ -411,6 +414,7 @@ export async function deployServer(
       : await checkServerDeployDecision(backend, {
           platformArch,
           expectedSha256: expectedServerBundleSha256,
+          forkBundleMarkers: resolveForkBundleMarkers(options),
         });
     return deployWithDecision(decision, expectedServerBundleSha256);
   };
@@ -427,6 +431,7 @@ export async function deployServer(
     : await checkServerDeployDecision(backend, {
         platformArch,
         expectedSha256: null,
+        forkBundleMarkers: resolveForkBundleMarkers(options),
       });
   if (preLockDecision.shouldDeploy) {
     log(`waiting for install-root lock: ${preLockDecision.reason}`);
@@ -478,11 +483,28 @@ type ServerDeployDecision =
       appVersionChanged?: boolean;
     };
 
+function resolveForkBundleMarkers(options: DeployOptions | undefined): readonly string[] {
+  // Fork-only markers must only gate deploys whose source bundle is this fork's
+  // own build. CDN-sourced installs can never contain them — remote-download
+  // fetches the upstream manifest, and without a mock-cdn release dir the local
+  // upload path falls back to the CDN cache — so probing there would force a
+  // redeploy on every connect that never converges. The desktop only passes
+  // mockCdnDir after verifying releases/<version> exists for the current build.
+  if (options?.assetInstallMode === "remote-download") {
+    return [];
+  }
+  if (!options?.mockCdnDir) {
+    return [];
+  }
+  return FORK_SERVER_BUNDLE_MARKERS;
+}
+
 async function checkServerDeployDecision(
   backend: IRemoteBackend,
   options: {
     platformArch: string;
     expectedSha256: string | null;
+    forkBundleMarkers: readonly string[];
   },
 ): Promise<ServerDeployDecision> {
   try {
@@ -525,6 +547,7 @@ async function checkServerDeployDecision(
       backend,
       nodePath,
       serverPath,
+      options.forkBundleMarkers,
     );
     if (requiredFeatureDecision.shouldDeploy) {
       return requiredFeatureDecision;

@@ -10,6 +10,13 @@ const REQUIRED_SERVER_BUNDLE_MARKERS = [
   "importMarketplaceSourceArchive",
 ];
 
+// Fork-only features that upstream CDN builds never contain. Callers probe these
+// only when the deploy source is this fork's own local build (see deploy.ts):
+// a stale same-version remote bundle missing them crashed the server process on
+// the browser-relay event subscription (2026-09-25 incident, see
+// docs/specs/remote-server-event-compat.md).
+export const FORK_SERVER_BUNDLE_MARKERS = ["onDynamicBrowserRelayRequest"];
+
 export type ServerBundleDeployDecision =
   | { shouldDeploy: false }
   | { shouldDeploy: true; reason: string };
@@ -18,11 +25,13 @@ export async function checkServerBundleRequiredMarkers(
   backend: IRemoteBackend,
   nodePath: string,
   serverPath: string,
+  extraMarkers: readonly string[] = [],
 ): Promise<ServerBundleDeployDecision> {
+  const markers = [...REQUIRED_SERVER_BUNDLE_MARKERS, ...extraMarkers];
   const script = `
 const fs = require("fs");
 const content = fs.readFileSync(process.argv[1], "utf8");
-const missing = ${JSON.stringify(REQUIRED_SERVER_BUNDLE_MARKERS)}.filter((marker) => !content.includes(marker));
+const missing = ${JSON.stringify(markers)}.filter((marker) => !content.includes(marker));
 if (missing.length > 0) {
   console.error("missing required server bundle markers: " + missing.join(","));
   process.exit(2);
