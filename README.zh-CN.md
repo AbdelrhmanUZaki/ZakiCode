@@ -11,25 +11,34 @@
   简体中文 | <a href="README.md">English</a> | <a href="README.ar.md">العربية</a>
 </p>
 
-ZakiCode 是 ZCode 的个人分支（得名自作者 Abdelrahman Zaki），聚焦于为 Agent 提供沙箱隔离的工作区运行时。上游的 ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Agent。本仓库包含客户端、后端服务、共享 UI，以及 Agent CLI 与运行时源码。
+ZakiCode 是 ZCode 的个人分支（得名自作者 Abdelrahman Zaki），聚焦于为 Agent 提供沙箱隔离的工作区运行时。上游 ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Agent —— 本仓库包含其全部内容，外加以下新增。
+
+## 本 Fork 的增量功能
+
+我自己的痛点，逐个解决（设计记录见 `docs/`）：
+
+- **每个项目一台隔离计算机。** **Projects + → Open folder in VM** 给 Agent 一台完整的 Linux VM——内部全权（docker、装包、无权限弹窗），宿主机不可触及（仅挂载一个文件夹）。首次使用自动构建 base image（默认：docker、python、node、gh——agent-vm 的常驻核心工具 git/ripgrep/build-essential 任何镜像都自带）。创建前展示默认规格与宿主真实空闲内存。供应链攻击在 VM 里"无物可偷、无处可扩散"（[agent-vm 安全模型](https://github.com/sylvinus/agent-vm#security-model)）。见 `docs/plan-open-in-vm.md`。
+- **看着 Agent 浏览网页——从 VM 里。** 上游 ZCode 本就为本地工作区驱动内置浏览器；本分支把它扩展到 VM 内（及任何远程会话）工作的 Agent：浏览器命令在桌面可见的内置浏览器 pane 上执行，截图回传给 Agent。
+- **VM 管控，每项一键。** Reconnect 一键拉起停止的 VM · 圆点显示 VM running/stopped · Stop 释放内存/CPU · 调整规格即新建 VM（有警示：挂载文件夹之外的内容会重置）。立方体图标标记 VM 工作区。见 `docs/plan-vm-specs.md`。
+- **阿拉伯语正确渲染（RTL）。** 聊天行自动判断方向；代码保持从左到右。
+
+为什么是 VM 而不是 Docker？容器共享宿主内核——容器逃逸即宿主机被攻陷，而 Agent 整天安装不可信的包。VM 运行自己的内核：即使在 VM 里拿到 root 也摸不到你的机器。Docker 照常可用——VM 内置真实 Docker Engine（非 Docker-in-Docker）。
+
+> **说明**：本分支基于**开源版 ZCode**，闭源版的部分功能（如手机远程控制、+150% 配额加成等）不在本仓库内。
+
+VM 能力基于 [agent-vm](https://github.com/sylvinus/agent-vm)（作者 sylvinus，感谢！）与 [Lima](https://lima-vm.io) 构建。ZakiCode 在应用内直接调用 agent-vm CLI；agent-vm 本身未做修改，仍可在终端独立使用。
+
+## 上游 ZCode —— 继承的工作台
+
+| 入口                 | 用途                                                           | 开发命令                       |
+| -------------------- | -------------------------------------------------------------- | ------------------------------ |
+| Desktop              | Electron 桌面应用                                              | `pnpm dev:desktop`             |
+| Web / ZCode 命令行版 | 终端与浏览器工作台；将 TUI、Web、后端和 Agent 组装为独立运行包 | `pnpm dev:web`                 |
+| Agent CLI            | 在终端中使用 `zcode`，也为 Desktop 和 Web 提供 Agent 运行时    | `pnpm --filter @zcode/cli dev` |
 
 ## 更新
 
 - 2026-9-23：更新至 ZCode v3.14.3 版本。
-
-## 本 Fork 的增量功能
-
-相对上游 ZCode，本分支新增（设计与验证记录见 `docs/`）：
-
-> **说明**：本分支基于**开源版 ZCode**，闭源版的部分功能（如手机远程控制、+150% 配额加成等）不在本仓库内。以下为在开源基础上新增的内容。
-
-- **远程会话浏览器中继**：远程附加会话（Web / 手机远控）中 Agent 的浏览器命令中继到桌面宿主的内置浏览器 pane 执行（CDP / WebContentsView），结果回传远端；仅信任宿主 relay 连接，命令按 `remoteSessionId` 路由，`node-repl-host` 随远程 Agent 资产下发。
-- **为什么是 VM 而不是 Docker？**：容器共享宿主内核，容器逃逸即宿主机被攻陷——而 Agent 整天在装不可信的包。VM 有自己的内核：即使在 VM 里拿到 root 也摸不到宿主机。Agent 依然有 Docker 可用——VM 内置真实 Docker Engine（非 Docker-in-Docker），可自由构建与运行容器化应用；供应链攻击在 VM 里"无物可偷、无处可扩散"（[agent-vm 安全模型](https://github.com/sylvinus/agent-vm#security-model)）。
-- **Open in VM（agent-vm 沙箱工作区）**：Projects **+** → **Open folder in VM** 自动创建/启动项目专属 agent-vm/Lima VM（缺基础镜像时先自动构建，默认精简集 python/node/docker/gh，agent-vm 的常驻核心工具 git/ripgrep/build-esktop 任何镜像都自带；SSH 端口 pin、banner 就绪等待、启动日志实时展示），跳过 SSH 向导并以同路径打开工作区；Reconnect 一键拉起已停止的 VM 并回读 pin 端口；侧栏提供 VM 状态徽章与 Stop VM。应用内直接调用 agent-vm CLI 完成编排（agent-vm 本身未修改，仍可终端独立使用），并在 `~/.ssh/config` 维护互通的受管 alias 块。见 `docs/plan-open-in-vm.md`。
-- **VM 资源规格**：首次创建 VM 前展示宿主真实余量（可用内存按内核 MemAvailable 口径），可自定义 memory / CPU / disk；侧栏 **VM settings…** 以 `agent-vm --reset` 重克隆应用新规格并重新 pin 端口。见 `docs/plan-vm-specs.md`。
-- 仓库维护：忽略 tsup 运行期生成的临时打包配置（`tsup.config.bundled_*.mjs`）。
-
-VM 能力基于开源工具构建，感谢 [agent-vm](https://github.com/sylvinus/agent-vm)（作者 sylvinus）与 [Lima](https://lima-vm.io)；本仓库的编排逻辑内置于应用内，未修改 agent-vm 本身。
 
 ## 初始化
 

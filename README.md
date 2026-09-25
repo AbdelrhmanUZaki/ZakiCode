@@ -11,44 +11,30 @@
   English | <a href="README.ar.md">العربية</a> | <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-ZakiCode is a personal fork of ZCode (named after its author, Abdelrahman Zaki), focused on sandbox-isolated runtimes for agent workspaces. Upstream ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. This repository contains the clients, backend services, shared UI, and Agent CLI and runtime source code.
+ZakiCode is a personal fork of ZCode (named after its author, Abdelrahman Zaki), focused on sandbox-isolated runtimes for agent workspaces. Upstream ZCode is an AI coding workspace with desktop, browser, and terminal interfaces — this repo carries all of it, plus the additions below.
 
 ## What this fork adds
 
 My own pain points, solved (design notes in `docs/`):
 
-> **Note on the base:** this fork builds on the **open-source ZCode**, which ships fewer features than the closed-source product — mobile remote control, the +150% quota bonus and similar account-side extras are not part of this repository. Everything below is added on top of the open-source base.
+- **An isolated computer per project.** **Projects + → Open folder in VM** gives the agent a full Linux VM — full access inside (docker, installs, no permission prompts), host untouched (one mounted folder). First use builds the base image itself (default: docker, python, node, gh — agent-vm's always-on core tools like git and ripgrep come too). Sizes and your real free RAM shown before you click. A supply-chain attack inside the VM finds nothing to steal and nowhere to spread ([agent-vm security model](https://github.com/sylvinus/agent-vm#security-model)). See `docs/plan-open-in-vm.md`.
+- **Watch the agent browse — from inside the VM.** Upstream ZCode already drives its embedded browser for host-local workspaces; this fork extends it to agents working inside the VM (and any remote session): their browser commands execute on the desktop's visible browser pane, and screenshots return to the agent.
+- **VM control, one click each.** Reconnect boots a stopped VM · a dot shows VM running/stopped · Stop frees RAM/CPU · resize creates a fresh VM (warned: anything outside the mounted folder resets). Cube icon marks VM workspaces. See `docs/plan-vm-specs.md`.
+- **Arabic reads properly (RTL).** Chat lines auto-detect direction; code stays left-to-right.
 
-### An isolated computer for every project
+Why a VM and not Docker? Containers share your host kernel — an escape is a host compromise, and agents install untrusted packages all day. A VM runs its own kernel: even root inside can't reach your machine. Docker still works — a real Docker Engine ships inside the VM (no Docker-in-Docker hacks).
 
-**Projects + → Open folder in VM.** First use: the app builds the base image itself (default: docker, python, node, gh — agent-vm's always-on core tools like git, ripgrep and build-essential come too). Every project VM is a clone. The panel shows the default size (1 vCPU / 3 GB / 10 GB) next to your machine's real free RAM before you click — go bigger if needed.
-
-Inside the sandbox the agent has full access: docker, installs, no permission prompts. Your host sees nothing — exactly one folder is mounted. Agents installing packages run arbitrary third-party code; in the VM, a supply-chain attack finds nothing to steal and nowhere to spread ([agent-vm security model](https://github.com/sylvinus/agent-vm#security-model)). See `docs/plan-open-in-vm.md`.
-
-### Why a VM and not Docker?
-
-Containers share your host kernel — a container escape is a host compromise, and agents run untrusted package installs all day. A VM runs its own kernel: even root inside can't reach your machine. The agent still gets Docker — a real Docker Engine ships inside the VM (no Docker-in-Docker hacks), so it builds and runs dockerized apps freely inside the sandbox.
-
-### See what the agent does in the browser
-
-Browser commands run on the desktop's embedded browser pane — you watch every step live, and screenshots return to the agent. No headless chrome needed inside the VM. Works from remote sessions too.
-
-### Full control, zero ceremony
-
-- **Reconnect** boots a stopped VM in one click.
-- A dot next to the folder shows **VM running / stopped**.
-- **⋯** menu: **Stop VM** frees RAM/CPU; **VM settings…** resizes (fresh VM — anything outside the mounted folder resets, with a warning).
-- Cube icon = VM workspace (cloud = remote, folder = local). See `docs/plan-vm-specs.md`.
-
-### Arabic reads properly (RTL)
-
-Each line auto-detects direction: Arabic right-to-left, code stays left-to-right — in the chat and the file panel.
-
----
+> **Note on the base:** this fork builds on the **open-source ZCode**, which ships fewer features than the closed-source product — mobile remote control, the +150% quota bonus and similar account-side extras are not part of this repository.
 
 Built on [agent-vm](https://github.com/sylvinus/agent-vm) (by sylvinus — thanks!) and [Lima](https://lima-vm.io). ZakiCode drives agent-vm's CLI from inside the app; agent-vm itself stays unmodified and still works standalone in your terminal.
 
-Repo housekeeping: ignore tsup's transient bundled configs (`tsup.config.bundled_*.mjs`).
+## Upstream ZCode — the inherited workspace
+
+| Interface                    | Purpose                                                                                   | Development command            |
+| ---------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------ |
+| Desktop                      | Electron desktop application                                                              | `pnpm dev:desktop`             |
+| Web / ZCode CLI distribution | Terminal and browser workspace; packages the TUI, Web client, backend, and Agent together | `pnpm dev:web`                 |
+| Agent CLI                    | The `zcode` terminal interface, which also provides the Agent runtime for Desktop and Web | `pnpm --filter @zcode/cli dev` |
 
 ## Updates
 
