@@ -344,13 +344,16 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
     }, wslIdleTtlMs);
   }
 
-  async function disposeEntry(entry: ConnectionEntry<TServices, TCapabilities>): Promise<void> {
+  async function disposeEntry(
+    entry: ConnectionEntry<TServices, TCapabilities>,
+    disposeOptions?: { finalState?: WindowRemoteConnectionState },
+  ): Promise<void> {
     if (entry.disposePromise) {
       return entry.disposePromise;
     }
     entry.disposed = true;
     clearIdleTimer(entry);
-    entry.state = "closing";
+    entry.state = disposeOptions?.finalState ?? "closing";
     entry.abortController.abort();
     entry.closeSubscription?.dispose();
     entry.closeSubscription = undefined;
@@ -382,6 +385,13 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
       session.sourceAvailability = "offline";
       options.onSessionClosed?.({ remoteSessionId, ...event });
     }
+    // A dead handle that is never disposed keeps its RPC client alive, and that
+    // client rejects in-flight requests only on dispose — so every pending
+    // remote call would wait forever (the 2026-09-25 incident: after the remote
+    // server crashed, the workspace UI spun for minutes on never-settling
+    // promises). Dispose immediately so in-flight calls fail with errors and
+    // sessions reach a terminal state.
+    void disposeEntry(entry, { finalState: "disconnected" });
   }
 
   function createEntry(params: {
@@ -779,7 +789,9 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
       }
       sessionsById.clear();
       pendingSessionsByRequestId.clear();
-      disposePromise = Promise.all(Array.from(entries, disposeEntry)).then(() => undefined);
+      disposePromise = Promise.all(Array.from(entries, (entry) => disposeEntry(entry))).then(
+        () => undefined,
+      );
       return disposePromise;
     },
   };
