@@ -1686,6 +1686,7 @@ async function createWindowRemoteConnectionHandle(params: {
   const services = createRemoteWorkspaceServiceCollection({
     clientConfigService,
     connectionServices: backendConnection.services,
+    forkBundleMarkersPresent: backendConnection.forkBundleMarkersPresent,
     sourceServices: activeServices ?? undefined,
     parentPort,
     // // Browser relay resolves the logical remote session by workspace scope: guest-owner and

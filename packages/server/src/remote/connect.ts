@@ -49,6 +49,12 @@ export interface RemoteRuntimeNetworkOptions {
 export interface RemoteConnection {
   services: IServiceAccessor;
   client: ChannelClient;
+  /**
+   * Whether the remote bundle carries this fork's feature markers after the
+   * deploy decision. False (unknown/absent) means fork-only remote events are
+   * not safe to subscribe to; consumers must degrade gracefully instead.
+   */
+  forkBundleMarkersPresent: boolean;
   dispose(): void;
   disposeAndWait(options?: { timeoutMs?: number }): Promise<void>;
 }
@@ -181,11 +187,17 @@ async function connectRemoteUnchecked(
   );
 
   // 2. Deploy server if needed
+  let forkBundleMarkersPresent = false;
   if (!options?.skipDeploy) {
     log("deploying server...");
-    await deployServer(backend, env, options);
+    const deployResult = await deployServer(backend, env, options);
+    forkBundleMarkersPresent = deployResult.forkBundleMarkersPresent;
     throwIfRemoteConnectAborted(options?.signal);
-    log("deploy complete");
+    log("deploy complete;", "fork bundle markers present:", forkBundleMarkersPresent);
+  } else {
+    // Skip-deploy callers assert the server is already deployed; without a
+    // probe we cannot vouch for fork-only events, so claim absent.
+    log("deploy skipped; fork bundle markers assumed absent");
   }
 
   // 3. Launch server
@@ -287,6 +299,7 @@ async function connectRemoteUnchecked(
   return {
     services,
     client,
+    forkBundleMarkersPresent,
     dispose() {
       beginDisposal();
       disposeBackend();

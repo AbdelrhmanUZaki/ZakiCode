@@ -62,6 +62,20 @@ const SERVER_BUNDLE_COMPONENT_ID = "server-bundle";
 
 export type DeployLockMode = "remote" | "caller-serialized";
 
+export interface RemoteServerDeployResult {
+  /** True when a deploy was performed, false when skipped (version matched). */
+  deployed: boolean;
+  /**
+   * Whether the remote server bundle contains this fork's feature markers AFTER
+   * the deploy decision ran. Resolved conservatively: a performed deploy in a
+   * gated (local-source) mode counts as present; a skipped deploy counts as
+   * present only when the marker probe passed; non-gated (CDN-source) modes
+   * always count as absent. Consumers must treat absent as "the remote cannot
+   * receive fork-only protocol events" (see docs/specs/remote-server-event-compat.md).
+   */
+  forkBundleMarkersPresent: boolean;
+}
+
 export interface DeployOptions {
   /** 取消当前远端连接初始化与其拥有的上传。 */
   signal?: AbortSignal;
@@ -93,13 +107,14 @@ export interface DeployOptions {
  * Deploy the zcode server to the remote machine.
  * Uploads Node.js binary, server bundle, and node-pty prebuild.
  *
- * Returns true if a deploy was performed, false if skipped (version matches).
+ * Returns whether a deploy was performed and whether the remote bundle carries
+ * this fork's feature markers after the decision (see RemoteServerDeployResult).
  */
 export async function deployServer(
   backend: IRemoteBackend,
   env: RemoteEnvironment,
   options?: DeployOptions,
-): Promise<boolean> {
+): Promise<RemoteServerDeployResult> {
   const platformArch = `${env.platform}-${env.arch}`;
   assertSupportedRemoteEnvironment(env);
   const selectedResourcePackageIds = normalizeRemoteResourcePackageSelection();
@@ -404,9 +419,10 @@ export async function deployServer(
     return true;
   };
 
-  const deployUsingCurrentRemoteState = async (): Promise<boolean> => {
+  const deployUsingCurrentRemoteState = async (): Promise<RemoteServerDeployResult> => {
+    const gateOn = resolveForkBundleMarkers(options).length > 0;
     const expectedServerBundleSha256 = await getComponentSha256(SERVER_BUNDLE_COMPONENT_ID);
-    const decision = options?.force
+    const decision: ServerDeployDecision = options?.force
       ? {
           shouldDeploy: true,
           reason: "force deploy requested",
@@ -416,7 +432,18 @@ export async function deployServer(
           expectedSha256: expectedServerBundleSha256,
           forkBundleMarkers: resolveForkBundleMarkers(options),
         });
-    return deployWithDecision(decision, expectedServerBundleSha256);
+    const deployed = await deployWithDecision(decision, expectedServerBundleSha256);
+    // Only the skipped path can vouch via the probe; narrowing also excludes the
+    // force-deploy literal, which carries no marker field.
+    const markersPresentAtCheck =
+      !decision.shouldDeploy && decision.forkBundleMarkersPresent === true;
+    return {
+      deployed,
+      // A performed deploy only proves the fork build landed when the marker gate
+      // was on; a skipped deploy proves it only via the probe. Anything else must
+      // claim absent so capability-gated subscriptions degrade instead of crashing.
+      forkBundleMarkersPresent: deployed ? gateOn : markersPresentAtCheck,
+    };
   };
 
   if (options?.deployLockMode === "caller-serialized") {
@@ -439,7 +466,7 @@ export async function deployServer(
   const deployLock = await acquireRemoteDeployLock(backend, {
     acquireTimeoutMs: options?.deployLockAcquireTimeoutMs,
   });
-  let deployOutcome: { ok: true; value: boolean } | { ok: false; error: unknown };
+  let deployOutcome: { ok: true; value: RemoteServerDeployResult } | { ok: false; error: unknown };
   try {
     // 进程内 WSL single-flight 无法覆盖不同 Desktop/build/backend。
     // 获得远端 install-root lock 后必须重新检查，等待者不能按过期判断重复覆盖部署目录。
@@ -476,7 +503,7 @@ export async function deployServer(
 }
 
 type ServerDeployDecision =
-  | { shouldDeploy: false }
+  | { shouldDeploy: false; forkBundleMarkersPresent?: boolean }
   | {
       shouldDeploy: true;
       reason: string;
@@ -562,7 +589,7 @@ async function checkServerDeployDecision(
         return identityDecision;
       }
     }
-    return { shouldDeploy: false };
+    return { shouldDeploy: false, forkBundleMarkersPresent: options.forkBundleMarkers.length > 0 };
   } catch (err) {
     log("checkServerDeployDecision error (will deploy):", err);
     return {

@@ -85,11 +85,121 @@ import {
 
 const runtimePreferencesLogger = createServiceLogger("remote-runtime-preferences");
 const browserRelayLogger = createServiceLogger("remote-browser-relay");
+
+/**
+ * Browser-use remote relay: the remote agent's interaction/browserList|browserExecute reverse-requests
+ * route to the local pane execution bridge (same browserControlMainBridge the local Host uses); results
+ * return via respondBrowserRelay. The subscription dies with the SSH connection; the server-side timeout
+ * is the backstop. Callers must gate this on the remote bundle's fork-marker capability
+ * (docs/specs/remote-server-event-compat.md): an unguarded stale server dies processing the unknown event.
+ */
+function wireBrowserRelayHostRequestBridge(
+  params: Parameters<typeof createRemoteWorkspaceServiceCollection>[0],
+): void {
+  params.connectionServices.zcodeAgentService.onDynamicBrowserRelayRequest()((request) => {
+    const relayStartedAt = Date.now();
+    const relayContext = {
+      event: "zcode_protocol.browser_relay.host_request_received",
+      module: "desktop.host.remote_workspace",
+      requestId: request.requestId,
+      method: request.method,
+      sessionId: request.sessionId,
+    };
+    browserRelayLogger.info(undefined, "browser relay host request received", relayContext);
+    void (async () => {
+      let response: { result?: unknown; error?: { code: string; message: string } };
+      try {
+        // // Workspace positioning in execute forwarding params is optional; the server-resolved values in the relay envelope fill it in.
+        const workspaceDefaults = {
+          workspaceKey: request.workspaceKey,
+          workspacePath: request.workspacePath,
+          ...(request.workspaceIdentity ? { workspaceIdentity: request.workspaceIdentity } : {}),
+        };
+        if (request.method === "list") {
+          const parsed = zcodeBrowserListParamsSchema.safeParse(request.params);
+          if (!parsed.success) {
+            throw new Error(
+              `Invalid relayed browserList params: ${parsed.error.issues
+                .slice(0, 3)
+                .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+                .join("; ")}`,
+            );
+          }
+          const browsers = await params.browserControlExecutor.list({
+            ...parsed.data,
+            ...workspaceDefaults,
+          });
+          response = { result: { browsers } };
+        } else {
+          const parsed = zcodeBrowserExecuteParamsSchema.safeParse(request.params);
+          if (!parsed.success) {
+            throw new Error(
+              `Invalid relayed browserExecute params: ${parsed.error.issues
+                .slice(0, 3)
+                .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+                .join("; ")}`,
+            );
+          }
+          // // A remote BrowserCommand has no remoteSessionId concept; resolve this connection's logical session by workspace scope so
+          // // guest owner / renderer reveal / recording upload all line up.
+          const relayedRemoteSessionId = params.resolveRemoteSessionIdForWorkspace?.({
+            workspacePath: request.workspacePath,
+            workspaceIdentity: request.workspaceIdentity,
+          });
+          response = {
+            result: await params.browserControlExecutor.execute({
+              ...parsed.data,
+              ...workspaceDefaults,
+              ...(relayedRemoteSessionId ? { remoteSessionId: relayedRemoteSessionId } : {}),
+              clientMode: parsed.data.clientMode ?? "desktop-continuous",
+              sessionContext: parsed.data.sessionContext ?? "live",
+            }),
+          };
+        }
+      } catch (error: unknown) {
+        const relayError = {
+          code: "execution_error" as const,
+          message: error instanceof Error ? error.message : String(error),
+        };
+        response = { error: relayError };
+        browserRelayLogger.warn(undefined, "browser relay host execution failed", {
+          ...relayContext,
+          durationMs: Date.now() - relayStartedAt,
+          error: relayError.message,
+        });
+      }
+      try {
+        await params.connectionServices.zcodeAgentService.respondBrowserRelay({
+          requestId: request.requestId,
+          ...response,
+        });
+        browserRelayLogger.info(undefined, "browser relay host response sent", {
+          ...relayContext,
+          durationMs: Date.now() - relayStartedAt,
+          ok: response.error === undefined,
+        });
+      } catch (error: unknown) {
+        browserRelayLogger.warn(undefined, "browser relay host response failed", {
+          ...relayContext,
+          durationMs: Date.now() - relayStartedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
+  });
+}
 const ZCODE_JWT_TOKEN_KEY = "zcodejwttoken";
 
 export function createRemoteWorkspaceServiceCollection(params: {
   clientConfigService: IClientConfigService;
   connectionServices: IServiceAccessor;
+  /**
+   * Whether the remote server bundle carries this fork's feature markers after the
+   * deploy decision (docs/specs/remote-server-event-compat.md). Gates fork-only event
+   * subscriptions: false means skip them — a stale unguarded server would die
+   * processing the unknown event.
+   */
+  forkBundleMarkersPresent: boolean;
   sourceServices?: ServiceCollection;
   parentPort: Parameters<typeof createBroadcastService>[0];
   createReportingRemoteZCodeTaskService: <T extends object>(service: T) => T;
@@ -325,97 +435,17 @@ export function createRemoteWorkspaceServiceCollection(params: {
   // // Browser-use remote relay: the remote agent's interaction/browserList|browserExecute reverse-requests
   // // route to the local pane execution bridge (same browserControlMainBridge the local Host uses); results return
   // // via respondBrowserRelay. The subscription dies with the SSH connection; the server-side timeout is the backstop.
-  params.connectionServices.zcodeAgentService.onDynamicBrowserRelayRequest()((request) => {
-    const relayStartedAt = Date.now();
-    const relayContext = {
-      event: "zcode_protocol.browser_relay.host_request_received",
-      module: "desktop.host.remote_workspace",
-      requestId: request.requestId,
-      method: request.method,
-      sessionId: request.sessionId,
-    };
-    browserRelayLogger.info(undefined, "browser relay host request received", relayContext);
-    void (async () => {
-      let response: { result?: unknown; error?: { code: string; message: string } };
-      try {
-        // // Workspace positioning in execute forwarding params is optional; the server-resolved values in the relay envelope fill it in.
-        const workspaceDefaults = {
-          workspaceKey: request.workspaceKey,
-          workspacePath: request.workspacePath,
-          ...(request.workspaceIdentity ? { workspaceIdentity: request.workspaceIdentity } : {}),
-        };
-        if (request.method === "list") {
-          const parsed = zcodeBrowserListParamsSchema.safeParse(request.params);
-          if (!parsed.success) {
-            throw new Error(
-              `Invalid relayed browserList params: ${parsed.error.issues
-                .slice(0, 3)
-                .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-                .join("; ")}`,
-            );
-          }
-          const browsers = await params.browserControlExecutor.list({
-            ...parsed.data,
-            ...workspaceDefaults,
-          });
-          response = { result: { browsers } };
-        } else {
-          const parsed = zcodeBrowserExecuteParamsSchema.safeParse(request.params);
-          if (!parsed.success) {
-            throw new Error(
-              `Invalid relayed browserExecute params: ${parsed.error.issues
-                .slice(0, 3)
-                .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-                .join("; ")}`,
-            );
-          }
-          // // A remote BrowserCommand has no remoteSessionId concept; resolve this connection's logical session by workspace scope so
-          // // guest owner / renderer reveal / recording upload all line up.
-          const relayedRemoteSessionId = params.resolveRemoteSessionIdForWorkspace?.({
-            workspacePath: request.workspacePath,
-            workspaceIdentity: request.workspaceIdentity,
-          });
-          response = {
-            result: await params.browserControlExecutor.execute({
-              ...parsed.data,
-              ...workspaceDefaults,
-              ...(relayedRemoteSessionId ? { remoteSessionId: relayedRemoteSessionId } : {}),
-              clientMode: parsed.data.clientMode ?? "desktop-continuous",
-              sessionContext: parsed.data.sessionContext ?? "live",
-            }),
-          };
-        }
-      } catch (error: unknown) {
-        const relayError = {
-          code: "execution_error" as const,
-          message: error instanceof Error ? error.message : String(error),
-        };
-        response = { error: relayError };
-        browserRelayLogger.warn(undefined, "browser relay host execution failed", {
-          ...relayContext,
-          durationMs: Date.now() - relayStartedAt,
-          error: relayError.message,
-        });
-      }
-      try {
-        await params.connectionServices.zcodeAgentService.respondBrowserRelay({
-          requestId: request.requestId,
-          ...response,
-        });
-        browserRelayLogger.info(undefined, "browser relay host response sent", {
-          ...relayContext,
-          durationMs: Date.now() - relayStartedAt,
-          ok: response.error === undefined,
-        });
-      } catch (error: unknown) {
-        browserRelayLogger.warn(undefined, "browser relay host response failed", {
-          ...relayContext,
-          durationMs: Date.now() - relayStartedAt,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    })();
-  });
+  // // Capability-gated per docs/specs/remote-server-event-compat.md: fork-only events are subscribed only when
+  // // the deploy layer asserts the remote bundle carries the fork markers — an unguarded stale server would
+  // // die processing the unknown event, so relay degrades to unavailable instead.
+  if (params.forkBundleMarkersPresent) {
+    wireBrowserRelayHostRequestBridge(params);
+  } else {
+    browserRelayLogger.warn(
+      undefined,
+      "browser relay subscription skipped: remote server bundle lacks fork relay markers (stale bundle or CDN-source install mode); switch the target's asset install mode to local-download-upload to enable relay",
+    );
+  }
 
   // Web 手机远控进入 SSH task 时只连到 remote workspace host，
   // 没有桌面 renderer 那层 `baseServices + remoteServices` 合并。
