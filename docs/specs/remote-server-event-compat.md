@@ -1,6 +1,6 @@
 # Spec: Remote server event-listen compatibility and stale-bundle refresh
 
-Status 2026-09-25: implemented; unit/type/arch checks pass; live SSH E2E pending (user-owned operational step — see verification log).
+Status 2026-09-25: implemented; unit/type/arch checks pass; verified differentially against real pre-fix and post-fix server bundles (crash reproduced pre-fix, survival proven post-fix); live SSH E2E pending on the user's target (install-mode switch is a user setting — see verification log).
 
 ## Goal
 
@@ -10,7 +10,7 @@ A desktop client must never kill a remote `zcode-server` by subscribing to a pro
 
 1. **An event-listen for an unknown event or an unreachable channel must never terminate the server.** The server logs the failure and keeps serving; it sends **no wire response** for the failed event subscription. Rationale: event request ids and promise request ids share one counter namespace, and the client's event handler fires its emitter with the payload of _any_ response frame for that id (`channelClient.ts` handlers are type-blind), so an error frame would be misinterpreted as event data. Silence matches the existing semantics for unknown-channel event listens (logged, never answered).
 2. **Failure is one-way.** The client cannot distinguish a failed subscription from a silent one — there is no error path for `EventListen` on the wire. Degradation is observable only through server-side logs (forwarded to the client log panel as `[remote]` lines on stdio remotes).
-3. **Fork-only server bundle markers are probed only when the deploy source is the fork's own local build** — i.e. a development mock-cdn release directory exists for the current version and the install mode is not `remote-download`. CDN-sourced bundles (the `remote-download` SSH mode, and the production CDN cache fallback) are upstream builds that can never contain fork-only markers; probing fork markers there would force a redeploy on every connect that never converges.
+3. **Fork-only server bundle markers are probed only when the deploy source is the fork's own local build** — i.e. a development mock-cdn release directory exists for the current version and the install mode is not `remote-download`. CDN-sourced bundles (the `remote-download` SSH mode, and the production CDN cache fallback) are upstream builds that can never contain fork-only markers; probing fork markers there would force a redeploy on every connect that never converges. **Consequence:** a CDN-sourced server also lacks the RPC guard itself, so a fork client subscribing to a fork-only event still crashes it. The marker gate therefore only makes remotes self-healing when the install mode can deliver fork code; `remote-download` targets must switch to `local-download-upload` to be safe against this crash class.
 4. Upstream markers (`skill-sync`, `mcp-sync`, …) keep their current unconditional probe semantics for all install sources.
 5. The browser-relay subscription remains the capability negotiation: an old server that never receives (or rejects) the subscription keeps its pre-relay behavior for `browserList`/`browserExecute` with no other behavior change.
 
@@ -22,7 +22,7 @@ A desktop client must never kill a remote `zcode-server` by subscribing to a pro
 | Wire semantics for event subscriptions (no error path) | `ChannelClient.requestEvent` (`packages/rpc/src/channelClient.ts`)                                                                                                                                         | unchanged; failed subscriptions leave the client emitter silent                                                                 |
 | Server bundle freshness vs fork features               | `REQUIRED_SERVER_BUNDLE_MARKERS` + `FORK_SERVER_BUNDLE_MARKERS` (`packages/server/src/remote/serverBundleDeployCheck.ts`), applied in `checkServerDeployDecision` (`packages/server/src/remote/deploy.ts`) | remote `node -e` probe of the deployed bundle text on every same-version connect; fork markers gated by install source          |
 
-Event order (old-server + new-client, after the fix):
+Event order (new client + **fork-built guarded server**, after the fix):
 
 ```
 Desktop host                          Remote zcode-server
@@ -43,15 +43,16 @@ All `ChannelServer` consumers inherit the guard, since the fix is in the shared 
 
 ## Known limitations (accepted)
 
-- A `remote-download` SSH target pulls the server bundle from the upstream CDN, so fork-only server features (e.g. browser relay) cannot ever be delivered to it; the connection now survives with relay unavailable. To run fork features on such a remote, switch the target's asset install mode to `local-download-upload`.
-- A production (non-mock-cdn) `local-download-upload` connect sources the bundle from the upstream CDN cache, so fork markers are skipped there too, per rule 3.
+- **A `remote-download` SSH target remains crash-prone.** The guard lives in the server bundle, and a `remote-download` deploy can never deliver fork code: the remote keeps an upstream bundle with neither the relay event nor the catch, so the relay subscription still kills it. Switching the target's asset install mode to `local-download-upload` is required, not optional, for such remotes.
+- A production (non-mock-cdn) `local-download-upload` connect sources the bundle from the upstream CDN cache, so fork markers are skipped there too (per rule 3) and the same residual crash risk applies until the remote is refreshed from a fork build.
+- The client cannot distinguish a failed subscription from a silent one (no error frame for `EventListen` on the wire); on guarded servers degradation is observable only through server-side logs, forwarded to the client log panel as `[remote]` lines on stdio remotes.
 - The remote server's crash log for the pre-fix failure named the missing event but gave no client/server version skew context; the new server-side log line names the channel and event so the gap is attributable from the client log panel.
 
 ## Acceptance scenarios
 
-1. New client + old remote server (missing `onDynamicBrowserRelayRequest`): connect completes; the subscription is caught and logged server-side; the server process stays alive; unrelated RPC calls continue to work; relay silently unavailable.
+1. New client + old remote server running a **fork-built (guarded) bundle** that predates `onDynamicBrowserRelayRequest`: connect completes; the subscription is caught and logged server-side; the server process stays alive; unrelated RPC calls continue to work; relay silently unavailable.
 2. Same-version stale bundle + local (mock-cdn) install source: the fork marker probe fails → full redeploy uploads the fork-built bundle → on the next connect the event exists and relay works.
-3. `remote-download` target (CDN source): no fork markers probed → no redeploy loop; the connection survives an upstream bundle with relay unavailable.
+3. `remote-download` target (CDN source): the marker gate stays off so no redeploy loop occurs, but the upstream server has neither the relay event nor the guard — the relay subscription still crashes it. Mitigation is operational: switch the target to `local-download-upload` so scenario 2 applies. (A client-side capability probe that skips the subscription on unguarded servers is a possible follow-up; see "Explicitly out of scope" in the implementation plan.)
 4. Regression: known events still fire end-to-end; unknown-channel promise requests still receive the "timed out" `PromiseError`; unknown-channel event listens stay logged-and-silent.
 
 ## Verification log
@@ -61,4 +62,9 @@ All `ChannelServer` consumers inherit the guard, since the fix is in the shared 
 - Unit tests (`packages/rpc/test/channelServer.test.ts`, 5 cases: missing-event survival + log assertion, no-wire-response silence, existing-event regression, unknown-channel promise timeout survival, unknown-channel event silence): 5/5 pass via `pnpm exec tsx --test`. Bug-detection check: reverting only the `onEventListen` guard (`git stash push -- packages/rpc/src/channelServer.ts`) makes 2/5 fail — the suite demonstrably catches the original crash.
 - `pnpm typecheck`: pass. Note: per repo convention `packages/*/test/` directories are outside the package tsconfigs (same for `services/test`, `ui/test`), so the new test is validated by execution and oxlint rather than `tsc`.
 - `pnpm lint`: 0 errors; 70 warnings, all pre-existing and none in changed files. `oxfmt --check` on the five changed files: clean (spec table auto-formatted by oxfmt).
-- **Not run**: live SSH E2E (scenarios 1–3 against the real `203.0.113.10` target) — requires the password-authenticated remote and the desktop app runtime, and the target's install-mode switch is a user setting. Scenario 1 is covered by the unit suite; scenario 2/3 semantics are covered by the decision gate plus the probe script behavior. Reproduce: switch the target to `local-download-upload`, reconnect, and expect a `deploy` log line about missing fork markers followed by a `zcode-server.cjs` SFTP upload.
+- **Not run**: live SSH E2E against the real `203.0.113.10` target — requires the password-authenticated remote and the app runtime; the target's install-mode switch is a user setting. Scenarios 1–3 are covered at the artifact level by the differential bundle verification below; reproduce live by switching the target to `local-download-upload` and reconnecting (expect a `deploy` log line about missing fork markers followed by a `zcode-server.cjs` SFTP upload).
+- **Differential bundle verification (real process, real handshake, real wire)**: built `dist/remote/zcode-server.cjs` from the fixed tree (`5dc08761…`) and from the pre-fix tree (`f05cd881…` — byte-identical to the mock-cdn copy staged at the time, i.e. the artifact a deploy would have shipped). A harness spawned each bundle, performed the genuine `zcode-hello`/`zcode-hello-ack` handshake, attached `ChannelClient` over the real stdio framing, subscribed to `onDynamicDoesNotExist` on the `zcode-agent` channel, and attempted a follow-up wire round-trip:
+  - pre-fix bundle: RPC initialized → subscription → **process exited code 1**, stderr stack `Error: Event not found: onDynamicDoesNotExist` at `Object.listen → ChannelServer.onEventListen → ChannelServer.onRawMessage` (identical shape to the production incident); round-trip got no response.
+  - fixed bundle: RPC initialized → subscription → **process stayed alive**; stderr shows the new caught log line `event listen failed on channel "zcode-agent" for event "onDynamicDoesNotExist": Event not found`; follow-up call round-tripped (`Method not found` rejection = server answering).
+  - Harness note: the handshake buffer must be replayed byte-exact (`Buffer`, not a UTF-8 string) before attaching the socket wrapper — a string round-trip corrupts the binary RPC frames and masks the result (first two harness attempts failed this way, matching why `connect.ts:213` unshifts a `Buffer`).
+- **mock-cdn freshness**: `scripts/prepare-prebuilds.mjs` (`prepare:remote-assets`) rebuilds `build:remote` and copies `dist/remote/zcode-server.cjs` into `packages/desktop/mock-cdn/releases/<version>/server/`; the copy staged at diagnosis time predated the fix (byte-identical to the pre-fix bundle). Re-run `pnpm --filter @zcode/desktop prepare:remote-assets` after this change so the deploy source ships the guarded bundle.
