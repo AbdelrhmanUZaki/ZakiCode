@@ -203,18 +203,32 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
       return;
     }
 
-    const disposable = channel.listen(
-      this.ctx,
-      request.name,
-      request.arg,
-    )((data) => {
-      this.sendResponse({
-        id: request.id,
-        data,
-        type: ResponseType.EventFire,
+    // A subscription to an event the channel does not implement (e.g. a newer
+    // client against an older deployed server) used to escape onRawMessage as an
+    // uncaught exception and kill the whole server process. Mirror onPromise's
+    // guard: log and keep serving. No wire response on purpose — event ids share
+    // the promise id namespace and the client's event handler fires its emitter
+    // with any response payload, so an error frame would be misread as event
+    // data. Silence matches the unknown-channel event semantics below.
+    try {
+      const disposable = channel.listen(
+        this.ctx,
+        request.name,
+        request.arg,
+      )((data) => {
+        this.sendResponse({
+          id: request.id,
+          data,
+          type: ResponseType.EventFire,
+        });
       });
-    });
-    this.activeRequests.set(request.id, disposable);
+      this.activeRequests.set(request.id, disposable);
+    } catch (error) {
+      console.error(
+        `event listen failed on channel "${request.channelName}" for event "${request.name}":`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 
   private disposeActiveRequest(id: number): void {
