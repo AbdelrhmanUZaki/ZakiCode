@@ -129,9 +129,7 @@ if (process.platform === "darwin" && existsSync(electronBinary)) {
   console.log(`[dev] Prepared macOS ZCode Dev bundle: ${devBundle.appPath}`);
 }
 
-const electronExtraArgs = (process.env.ZCODE_DEV_ELECTRON_ARGS ?? "")
-  .split(/\s+/)
-  .filter(Boolean);
+const electronExtraArgs = (process.env.ZCODE_DEV_ELECTRON_ARGS ?? "").split(/\s+/).filter(Boolean);
 const electron = spawn(electronCommand, [".", ...electronExtraArgs], {
   cwd: root,
   stdio: "inherit",
