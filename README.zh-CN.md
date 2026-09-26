@@ -17,8 +17,8 @@ ZakiCode 是 ZCode 的个人分支（得名自作者 Abdelrahman Zaki），聚�
 
 我自己的痛点，逐个解决（设计记录见 `docs/`）：
 
-- **每个项目一台隔离计算机。** **Projects + → Open folder in VM** 给 Agent 一台完整的 Linux VM——内部全权（docker、装包、无权限弹窗），宿主机不可触及（仅挂载一个文件夹）。首次使用自动构建 base image（默认：docker、python、node、gh——agent-vm 的常驻核心工具 git/ripgrep/build-essential 任何镜像都自带）。创建前展示默认规格与宿主真实空闲内存。供应链攻击在 VM 里"无物可偷、无处可扩散"（[agent-vm 安全模型](https://github.com/sylvinus/agent-vm#security-model)）。见 `docs/plan-open-in-vm.md`。
-- **看着 Agent 浏览网页——从 VM 里。** 上游 ZCode 本就为本地工作区驱动内置浏览器；本分支把它扩展到 VM 内（及任何远程会话）工作的 Agent：浏览器命令在桌面可见的内置浏览器 pane 上执行，截图回传给 Agent。
+- **每个项目一台隔离计算机。** **Projects + → Open folder in VM** 给 Agent 一台完整的 Linux VM——因此可以放心地给它选 **Full access**：docker、装包、无权限弹窗，全部被 VM 隔离，宿主机不可触及（仅挂载一个文件夹）。首次使用自动构建 base image（默认：docker、python、node、gh——agent-vm 的常驻核心工具 git/ripgrep/build-essential 任何镜像都自带）。创建前展示默认规格与宿主真实空闲内存。供应链攻击在 VM 里"无物可偷、无处可扩散"（[agent-vm 安全模型](https://github.com/sylvinus/agent-vm#security-model)）。见 `docs/plan-open-in-vm.md`。
+- **看着 Agent 浏览网页——从 VM、SSH 服务器或 Docker 容器。** 上游 ZCode 只在 Agent 本地运行时驱动内置浏览器；任何远程会话（VM、SSH、Docker）里 browser-use 插件都找不到可用后端。本分支把这一能力扩展到全部场景且开箱即用：Agent 的浏览器命令在桌面可见的浏览器 pane 上执行，截图回传给 Agent。见 `docs/specs/remote-server-event-compat.md`。
 - **VM 管控，每项一键。** Reconnect 一键拉起停止的 VM · 圆点显示 VM running/stopped · Stop 释放内存/CPU · 调整规格即新建 VM（有警示：挂载文件夹之外的内容会重置）。立方体图标标记 VM 工作区。见 `docs/plan-vm-specs.md`。
 - **阿拉伯语正确渲染（RTL）。** 聊天行自动判断方向；代码保持从左到右。
 
