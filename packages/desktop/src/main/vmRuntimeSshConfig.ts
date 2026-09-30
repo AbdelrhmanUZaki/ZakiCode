@@ -16,7 +16,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function buildSshAliasBlock(
+export function buildSshAliasBlock(
   alias: string,
   endpoint: Pick<VmRuntimeEndpoint, "host" | "port" | "username" | "privateKeyPath">,
 ): string {
@@ -28,6 +28,9 @@ function buildSshAliasBlock(
     `  User ${endpoint.username}`,
     `  IdentityFile ${endpoint.privateKeyPath}`,
     "  IdentitiesOnly yes",
+    // ssh keeps the first value it obtains: without this line a ForwardAgent yes under Host * elsewhere in the
+    // user's file would forward the SSH agent into the VM — the exact leak agent-vm's model exists to prevent.
+    "  ForwardAgent no",
     "  StrictHostKeyChecking no",
     "  UserKnownHostsFile /dev/null",
     "  ServerAliveInterval 30",

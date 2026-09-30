@@ -16,7 +16,7 @@ import type {
 } from "@zcode/shared";
 import { resolveVmTemplatePreinstall } from "@zcode/shared";
 import { describeCommandFailure, runVmCommand } from "./vmRuntimeProcess.js";
-import { pinVmPort, readPinnedPort, waitForSshEndpoint } from "./vmRuntimePort.js";
+import { pickPinnedPort, readPinnedPort, waitForSshEndpoint } from "./vmRuntimePort.js";
 import { refreshSshConfigAlias } from "./vmRuntimeSshConfig.js";
 
 /** A first clone / --reset re-clone of the base template can take minutes; generous caps avoid killing it early. */
@@ -136,6 +136,12 @@ export function describeVmSpec(spec: VmResourceSpec): string {
   return `${spec.memoryGb ?? 3} GB / ${spec.cpus ?? 1} CPU / ${spec.diskGb ?? 10} GB disk`;
 }
 
+/** The pinned SSH port rides the agent-vm command itself (a global flag before the command); agent-vm writes
+ * `.ssh.localPort` — at clone time on create/`--reset`, or on a stopped instance right before it starts. */
+export function buildAgentVmPortArgs(pinnedPort?: number): string[] {
+  return pinnedPort === undefined ? [] : ["--ssh-port", String(pinnedPort)];
+}
+
 export async function runAgentVm(
   args: string[],
   options: { cwd: string; timeoutMs: number; onLog?: VmRuntimeLogLine },
@@ -157,12 +163,16 @@ export async function startVm(
   phase: "create" | "start",
   onLog: VmRuntimeLogLine,
   spec?: VmResourceSpec,
+  pinnedPort?: number,
 ): Promise<void> {
-  const result = await runAgentVm([...buildAgentVmSpecArgs(spec), "shell", "-c", "true"], {
-    cwd: workspacePath,
-    timeoutMs: phase === "create" ? VM_CREATE_TIMEOUT_MS : VM_START_TIMEOUT_MS,
-    onLog,
-  });
+  const result = await runAgentVm(
+    [...buildAgentVmSpecArgs(spec), ...buildAgentVmPortArgs(pinnedPort), "shell", "-c", "true"],
+    {
+      cwd: workspacePath,
+      timeoutMs: phase === "create" ? VM_CREATE_TIMEOUT_MS : VM_START_TIMEOUT_MS,
+      onLog,
+    },
+  );
   if (result.code !== 0) {
     throw new Error(describeCommandFailure(`agent-vm shell (${phase})`, result));
   }
@@ -230,7 +240,8 @@ export interface VmInstanceFacts {
   pinnedPort: number | null;
 }
 
-/** Three branches, same as vmup: missing (create→pin→start) / stopped (pin if needed→start) / running without pin (stop→pin→start). */
+/** Three branches, same as vmup: missing (create+pin+start in one command) / stopped (start, pinning via --ssh-port when unpinned) /
+ * running without pin (stop first — a running VM never takes a differing --ssh-port — then start with the pin). */
 export async function ensureUpSequence(
   workspacePath: string,
   identity: { vmName: string; alias: string; hashSegment: string },
@@ -245,30 +256,32 @@ export async function ensureUpSequence(
     // Pre-create bootstrap: build the base image first when missing (one-time), otherwise create fails with a
     // raw agent-vm error — the last remaining reason to open a terminal.
     await ensureBaseTemplate(workspacePath, onLog, templateTools);
+    const port = await pickPinnedPort(hashSegment, vmName);
     onLog(
-      `==> Creating VM '${vmName}' with ${describeVmSpec(spec ?? {})} (first run clones the base template; this can take minutes)`,
+      `==> Creating VM '${vmName}' with ${describeVmSpec(spec ?? {})} and pinned SSH port ${port} (first run clones the base template; this can take minutes)`,
     );
-    await startVm(workspacePath, "create", onLog, spec);
-    onLog("==> Pinning SSH port");
-    await stopVm(workspacePath, onLog);
-    await pinVmPort(vmName, hashSegment);
-    await startVm(workspacePath, "start", onLog);
+    await startVm(workspacePath, "create", onLog, spec, port);
   } else if (spec) {
     // Specs are consumed at creation only; resizing an existing instance goes through reconfigure.
     onLog(`==> VM exists; keeping its resources (${describeVmSpec(instanceSpec ?? {})})`);
   }
   if (facts.exists && !facts.running) {
     if (facts.pinnedPort === null) {
-      onLog("==> Pinning SSH port");
-      await pinVmPort(vmName, hashSegment);
+      // A stopped instance takes a differing --ssh-port right before it starts, so pin+start is one command.
+      const port = await pickPinnedPort(hashSegment, vmName);
+      onLog(`==> Starting VM '${vmName}' (pinning SSH port ${port} via --ssh-port)`);
+      await startVm(workspacePath, "start", onLog, undefined, port);
+    } else {
+      onLog(`==> Starting VM '${vmName}'`);
+      await startVm(workspacePath, "start", onLog);
     }
-    onLog(`==> Starting VM '${vmName}'`);
-    await startVm(workspacePath, "start", onLog);
   } else if (facts.exists && facts.running && facts.pinnedPort === null) {
+    // agent-vm prompts on /dev/tty and aborts to "current settings" when a running VM is asked for a new port,
+    // so the one restart this branch already owed is where the pin gets applied.
     onLog("==> VM running without a pinned port; restarting once to pin it");
     await stopVm(workspacePath, onLog);
-    await pinVmPort(vmName, hashSegment);
-    await startVm(workspacePath, "start", onLog);
+    const port = await pickPinnedPort(hashSegment, vmName);
+    await startVm(workspacePath, "start", onLog, undefined, port);
   }
   return {
     success: true,
@@ -276,7 +289,7 @@ export async function ensureUpSequence(
   };
 }
 
-/** Resize = --reset re-clone (with the new spec flags) → stop → re-pin (a fresh instance loses the pin) → start. */
+/** Resize = one `--reset` re-clone command with the new spec flags; --ssh-port re-pins the fresh instance at clone time. */
 export async function reconfigureSequence(
   workspacePath: string,
   identity: { vmName: string; alias: string; hashSegment: string },
@@ -284,20 +297,24 @@ export async function reconfigureSequence(
   onLog: VmRuntimeLogLine,
 ): Promise<VmEnsureUpResult> {
   const { vmName, alias, hashSegment } = identity;
+  const port = await pickPinnedPort(hashSegment, vmName);
   onLog(
-    `==> Re-creating VM '${vmName}' with ${describeVmSpec(spec)} (clones the base template; this can take minutes)`,
+    `==> Re-creating VM '${vmName}' with ${describeVmSpec(spec)} and pinned SSH port ${port} (clones the base template; this can take minutes)`,
   );
   const result = await runAgentVm(
-    [...buildAgentVmSpecArgs(spec), "--reset", "shell", "-c", "true"],
+    [
+      ...buildAgentVmSpecArgs(spec),
+      ...buildAgentVmPortArgs(port),
+      "--reset",
+      "shell",
+      "-c",
+      "true",
+    ],
     { cwd: workspacePath, timeoutMs: VM_CREATE_TIMEOUT_MS, onLog },
   );
   if (result.code !== 0) {
     throw new Error(describeCommandFailure("agent-vm shell (reconfigure --reset)", result));
   }
-  onLog("==> Pinning SSH port");
-  await stopVm(workspacePath, onLog);
-  await pinVmPort(vmName, hashSegment);
-  await startVm(workspacePath, "start", onLog);
   return {
     success: true,
     endpoint: await finalizeEndpoint(vmName, alias, onLog),

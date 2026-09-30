@@ -66,15 +66,26 @@ directly. Ported contract (reference: the vmup script, lines 17–112):
   within the 1000-port span) while the port is listening (`ss` — Linux-first;
   fall back to a TCP connect-probe where unavailable) or pinned in any
   _other_ `~/.lima/*/lima.yaml` `ssh.localPort`.
-- lifecycle: `agent-vm shell -c true` both creates (clone) and starts; pin via
-  `limactl edit <vm> --set '.ssh.localPort = <p>'` requires the VM stopped
-  (stop → pin → start, exactly the script's three branches: create / stopped /
-  running-without-pin).
+- lifecycle: `agent-vm shell -c true` both creates (clone) and starts; the pin
+  rides the same command as `--ssh-port <p>` (agent-vm ≥0.2.0 writes
+  `.ssh.localPort` itself — at clone time on create/`--reset`, or on the
+  stopped instance right before start). The app never writes `lima.yaml`
+  directly. Never pass a differing `--ssh-port` while the VM runs: agent-vm
+  prompts on /dev/tty and silently aborts to "current settings" without a
+  TTY. Branches (same three as the script): create → one command
+  (create+pin+start) / stopped-unpinned → one command (pin+start) /
+  running-unpinned → stop → that command. agent-vm also refuses a port
+  another VM already holds, so a failed pick surfaces as a command error.
 - read-back: parse the last `ssh.localPort` from `~/.lima/<vm>/lima.yaml` —
   the source of truth, never the computed value.
 - ssh config: rewrite the `# BEGIN/END agent-vm alias: <alias>` managed block
   in `~/.ssh/config` with the fresh port — same markers as the script, so the
-  standalone CLI and the app never fight over stale blocks.
+  standalone CLI and the app never fight over stale blocks. The block sets
+  `ForwardAgent no`: ssh takes the first obtained value, so without it a
+  `ForwardAgent yes` under `Host *` elsewhere in the user's file would
+  forward the SSH agent into the VM — the leak agent-vm's model exists to
+  prevent (agent-vm README guidance; the vmup script should grow the same
+  line to keep blocks interchangeable).
 
 The provider resolves `{vm, alias, host:"127.0.0.1", port, user, key, state}`
 with `state` ∈ `none|creating|starting|running|stopped` (from `agent-vm info`
@@ -238,6 +249,20 @@ VM-mode auto-start guard (`vmFlowStartedRef`) wasn't reset when the flow
 completed via auto-select, so a second Open-in-VM opened a blank dialog —
 now reset on completion and on path change (SSHDialog). Multi-window
 single-flight (R5) remains implemented-but-not-E2E'd.
+
+**2026-09-30 pin write path + ForwardAgent hardening.** agent-vm 0.2.0 made
+`--ssh-port N` first-class (applied at clone time on create/`--reset`, or on a
+stopped instance before start; prompt-and-abort on a running VM without a
+TTY — never pass it while running). `pinVmPort` (direct `limactl edit` write
+into `lima.yaml`) is gone; port selection (`pickPinnedPort`) stays ours and
+the value rides the agent-vm command. Sequences shrink: create and
+stopped-unpinned become one command (create+pin+start / pin+start),
+running-unpinned keeps its stop first, and reconfigure's stop→re-pin→start
+tail collapses into the `--reset` command itself. The managed alias block
+gains `ForwardAgent no` (first-obtained-value wins against `Host *`; without
+it the user's SSH agent would be forwarded into the VM — agent-vm README
+guidance). vmup (private script) should mirror the line to keep rewritten
+blocks identical.
 
 - After rebasing onto a new upstream version, re-run
   `node scripts/prepare-prebuilds.mjs` BEFORE any VM connect E2E: mock-cdn

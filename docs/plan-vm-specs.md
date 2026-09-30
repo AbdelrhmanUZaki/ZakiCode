@@ -298,3 +298,15 @@ change's files) ✓. S4 live observation (memory freed while the panel is
 open, IPC silence after Start/Cancel) not exercised in this session —
 needs the desktop dev app with Lima; unit tests + the enabled-flag wiring
 cover the stop path by construction.
+
+---
+
+**2026-09-30 record: pin write path changed under §2.5/§2.3.** The re-pin
+steps described above ("stop → re-pin → start" after `--reset`, and pinning
+inside ensureUp's stop windows) no longer write `lima.yaml` via
+`limactl edit`: the picked port rides the agent-vm command itself as
+`--ssh-port N` (agent-vm ≥0.2.0 applies it at clone time on create/`--reset`,
+or on a stopped instance before start). Resize is now a single
+`agent-vm [--spec] --ssh-port N --reset shell -c true` command; the read-back
+truth (`lima.yaml` `localPort`) and re-pin-after-reset semantics are
+unchanged. Details: `docs/plan-open-in-vm.md` §2.1 + its 2026-09-30 record.
