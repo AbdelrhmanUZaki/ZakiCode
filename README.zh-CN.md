@@ -13,6 +13,19 @@
 
 ZakiCode 是 ZCode 的个人分支（得名自作者 Abdelrahman Zaki），聚焦于为 Agent 提供沙箱隔离的工作区运行时。上游 ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Agent —— 本仓库包含其全部内容，外加以下新增。
 
+## 运行 ZakiCode
+
+**使用应用：**从 [Releases](https://github.com/AbdelrhmanUZaki/ZakiCode/releases) 下载构建（Linux 提供 `deb` / `AppImage`），或从源码构建——见[初始化](#初始化)（Node.js 24 + pnpm，`pnpm bootstrap`，然后 `pnpm dev:desktop`）。
+
+**启用 VM 工作区：**VM 功能需要 [agent-vm](https://github.com/sylvinus/agent-vm)，由它管理 Lima 和 QEMU：
+
+```bash
+curl -fsSL https://www.agent-vm.org/install.sh | sh
+agent-vm doctor # 检查 Lima / QEMU 状态
+```
+
+ZakiCode 会自动检测，**Open folder in VM** 选项随即出现。首次创建 VM 会构建一次 base image（10–30 分钟），之后每个项目都只是快速 clone。
+
 ## 本 Fork 的增量功能
 
 我自己的痛点，逐个解决（设计记录见 `docs/`）：

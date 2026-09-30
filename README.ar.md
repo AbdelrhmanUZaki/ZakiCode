@@ -13,6 +13,19 @@
 
 ‏ZakiCode نسخة شخصية من ZCode (باسم صاحبها Abdelrahman Zaki) تركّز على بيئات تشغيل معزولة في sandbox لمساحات عمل الوكيل. ZCode الأصلي مساحة عمل برمجية بالذكاء الاصطناعي بواجهات سطح مكتب ومتصفح وطرفية — وهذا المستودع يحمل كل ذلك، مع الإضافات أدناه.
 
+## شغّل ZakiCode
+
+**استخدام التطبيق:** حمّل نسخة جاهزة من [الإصدارات](https://github.com/AbdelrhmanUZaki/ZakiCode/releases) (`deb` / `AppImage` للينكس)، أو ابنِ من المصدر — انظر [الإعداد](#الإعداد) (Node.js 24 وpnpm، ثم `pnpm bootstrap` فـ`pnpm dev:desktop`).
+
+**تفعيل مساحات الـ VM:** تتطلب ميزات الـ VM تثبيت [agent-vm](https://github.com/sylvinus/agent-vm) وهو ما يدير Lima وQEMU:
+
+```bash
+curl -fsSL https://www.agent-vm.org/install.sh | sh
+agent-vm doctor # للتحقق من حالة Lima / QEMU
+```
+
+يكتشف ZakiCode التثبيت تلقائيًا فيظهر خيار **Open folder in VM**. أول VM يبني الـ base image مرة واحدة (10–30 دقيقة)، وكل مشروع بعدها مجرد clone سريع.
+
 ## ما تضيفه هذه النسخة
 
 نقاط ألمي الخاصة، محلولة (ملاحظات التصميم في `docs/`):

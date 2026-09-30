@@ -13,6 +13,19 @@
 
 ZakiCode is a personal fork of ZCode (named after its author, Abdelrahman Zaki), focused on sandbox-isolated runtimes for agent workspaces. Upstream ZCode is an AI coding workspace with desktop, browser, and terminal interfaces — this repo carries all of it, plus the additions below.
 
+## Run ZakiCode
+
+**Use the app:** grab a build from [Releases](https://github.com/AbdelrhmanUZaki/ZakiCode/releases) (`deb` / `AppImage` for Linux), or build from source — see [Setup](#setup) (Node.js 24 + pnpm, `pnpm bootstrap`, then `pnpm dev:desktop`).
+
+**Enable VM workspaces:** the VM features need [agent-vm](https://github.com/sylvinus/agent-vm), which manages Lima and QEMU:
+
+```bash
+curl -fsSL https://www.agent-vm.org/install.sh | sh
+agent-vm doctor # verify Lima / QEMU status
+```
+
+ZakiCode detects it automatically and the **Open folder in VM** option appears. The first VM builds the base image once (10–30 min); every project after that is a fast clone.
+
 ## What this fork adds
 
 My own pain points, solved (design notes in `docs/`):
