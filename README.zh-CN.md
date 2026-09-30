@@ -26,7 +26,7 @@ ZakiCode 是 ZCode 的个人分支（得名自作者 Abdelrahman Zaki），聚�
 
 > **说明**：本分支基于**开源版 ZCode**，闭源版的部分功能（如手机远程控制、+150% 配额加成等）不在本仓库内。
 
-VM 能力基于 [agent-vm](https://github.com/sylvinus/agent-vm)（作者 sylvinus，感谢！）与 [Lima](https://lima-vm.io) 构建。ZakiCode 在应用内直接调用 agent-vm CLI；agent-vm 本身未做修改，仍可在终端独立使用。
+VM 能力基于 [agent-vm](https://github.com/sylvinus/agent-vm)（作者 sylvinus，感谢！）与 [Lima](https://lima-vm.io) 构建。ZakiCode 在应用内直接调用 agent-vm CLI；agent-vm 本身未做修改，仍可在终端独立使用。每个 VM 的 SSH 端口通过 agent-vm 的 `--ssh-port` 固定（按项目确定性分配），重启或重建后重连依然有效——全程无需手动输入端口。ZakiCode 还在 `~/.ssh/config` 中维护受管别名（`ssh vm-<project>`），可从任意终端打开同一台 VM，并写入 `ForwardAgent no`，确保你的 SSH agent 绝不进入 VM。
 
 ## 上游 ZCode —— 继承的工作台
 

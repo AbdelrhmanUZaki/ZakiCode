@@ -26,7 +26,7 @@ Why a VM and not Docker? Containers share your host kernel — an escape is a ho
 
 > **Note on the base:** this fork builds on the **open-source ZCode**, which ships fewer features than the closed-source product — mobile remote control, the +150% quota bonus and similar account-side extras are not part of this repository.
 
-Built on [agent-vm](https://github.com/sylvinus/agent-vm) (by sylvinus — thanks!) and [Lima](https://lima-vm.io). ZakiCode drives agent-vm's CLI from inside the app; agent-vm itself stays unmodified and still works standalone in your terminal.
+Built on [agent-vm](https://github.com/sylvinus/agent-vm) (by sylvinus — thanks!) and [Lima](https://lima-vm.io). ZakiCode drives agent-vm's CLI from inside the app; agent-vm itself stays unmodified and still works standalone in your terminal. Every VM gets its SSH port pinned through agent-vm's `--ssh-port` (deterministic per project), so reconnects keep working across restarts and re-creates — you never type a port. A managed `~/.ssh/config` alias (`ssh vm-<project>`) opens the same VM from any terminal, with `ForwardAgent no` so your SSH agent never enters the VM.
 
 ## Upstream ZCode — the inherited workspace
 
