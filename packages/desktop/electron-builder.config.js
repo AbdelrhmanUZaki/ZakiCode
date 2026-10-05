@@ -75,6 +75,9 @@ const desktopProductIdentity = resolveDesktopProductIdentity({
   ...process.env,
   ZCODE_ENV: builtinProviderConfig.environment,
 });
+// Fork builds ship their own amber artwork (see scripts/make-zakicode-icons.mjs);
+// every other flavor keeps the upstream icons unchanged.
+const isZakicodeFlavor = desktopProductIdentity.flavor === "zakicode";
 const nativeSearchReleasePlan = resolveNativeSearchReleasePlan({
   platform: targetPlatform.os,
   arch: targetPlatform.arch,
@@ -595,16 +598,20 @@ export default {
     },
     {
       // 应用图标：打包后放入 resources 目录，主进程通过 process.resourcesPath 加载
-      from: "build/icon.png",
+      from: isZakicodeFlavor ? "build/zakicode-icon.png" : "build/icon.png",
       to: "icon.png",
     },
     ...(targetPlatform.os === "linux"
       ? [
           {
             // AppImage 用户级 hicolor 图标安装使用真实 512x512 资源，避免目录标称尺寸和 PNG IHDR 不一致。
-            from: "build/icons/512x512.png",
+            from: isZakicodeFlavor ? "build/zakicode-icons/512x512.png" : "build/icons/512x512.png",
             to: "icon_512x512.png",
           },
+          // Full size set for the runtime user-level icon install: taskbars and
+          // launchers resolve icons per requested size, and a single 512px file
+          // left the fork with a blank taskbar icon on KDE Wayland.
+          ...(isZakicodeFlavor ? [{ from: "build/zakicode-icons", to: "zakicode-icons" }] : []),
         ]
       : []),
     {
@@ -697,6 +704,9 @@ export default {
   linux: {
     target: ["AppImage", "deb", "rpm", "pacman"],
     artifactName: buildDesktopArtifactName("linux"),
+    // Fork builds use their own icon set (amber Z); explicit for both branches
+    // so the fork never falls back to upstream artwork by accident.
+    icon: isZakicodeFlavor ? "build/zakicode-icons" : "build/icons",
     // desktop 包名是 scoped package（@zcode/desktop），electron-builder 默认会把
     // Linux executable/Icon 推成 @zcodedesktop。部分桌面环境无法按这个 icon name 命中
     // hicolor 图标，最终回退成系统齿轮。这里固定成稳定的小写名称，让 Icon=zcode
