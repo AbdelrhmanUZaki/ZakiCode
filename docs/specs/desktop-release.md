@@ -1,6 +1,6 @@
 # Spec: Fork release builds (GitHub Releases with installers)
 
-Status 2026-10-03: implemented; first fork release `v3.14.3-zaki.1` ships `deb` + `AppImage` (linux x64). `rpm` and `pacman` are omitted this pass: their fpm backends need `rpmbuild` / `bsdtar`, not installable without sudo on the build host. A Windows NSIS cross-build needs wine and macOS needs a macOS host; both stay deferred until a proper build host or CI exists.
+Status 2026-10-05: implemented. `v3.14.3-zaki.1` shipped `deb` + `AppImage` with upstream `ZCode` identity; from `v3.14.3-zaki.2` releases build as the **zakicode flavor** (`ZCODE_ENV=production ZCODE_FORK_IDENTITY=1`): artifacts named `ZakiCode-*`, side-by-side per [`zakicode-identity.md`](zakicode-identity.md). `rpm` and `pacman` are omitted: their fpm backends need `rpmbuild` / `bsdtar`, not installable without sudo on the build host. A Windows NSIS cross-build needs wine and macOS needs a macOS host; both stay deferred until a proper build host or CI exists.
 
 ## Goal
 
