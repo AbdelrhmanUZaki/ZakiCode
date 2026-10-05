@@ -10,18 +10,11 @@ import {
 // 从 desktopLinuxDeepLinkRegistration 拆出的 AppImage 用户级图标安装逻辑：
 // 图标集成是可选的桌面增强，与 deep link 协议注册分属不同关注点，独立成模块便于各自演进。
 
-const LINUX_APP_ICON_NAME = "zcode";
+const LINUX_APP_ICON_DEFAULT_NAME = "zcode";
 const LINUX_APP_ICON_SIZE = "512x512";
 
-function resolveLinuxUserIconFilePath(dataDir: string): string {
-  return join(
-    dataDir,
-    "icons",
-    "hicolor",
-    LINUX_APP_ICON_SIZE,
-    "apps",
-    `${LINUX_APP_ICON_NAME}.png`,
-  );
+function resolveLinuxUserIconFilePath(dataDir: string, iconName: string): string {
+  return join(dataDir, "icons", "hicolor", LINUX_APP_ICON_SIZE, "apps", `${iconName}.png`);
 }
 
 function copyFileIfChanged(sourcePath: string, targetPath: string): boolean {
@@ -42,11 +35,12 @@ function shouldInstallAppImageDesktopIcon(params: {
 
 function installLinuxAppImageDesktopIcon(params: {
   dataDir: string;
+  iconName: string;
   iconSourcePath: string;
   logger: LinuxDeepLinkRegistrationLogger;
   runCommand?: LinuxDesktopCommandRunner;
 }): { iconFilePath: string; installed: boolean; changed: boolean } {
-  const iconFilePath = resolveLinuxUserIconFilePath(params.dataDir);
+  const iconFilePath = resolveLinuxUserIconFilePath(params.dataDir, params.iconName);
   if (!existsSync(params.iconSourcePath)) {
     params.logger.warn("[deep-link] Linux AppImage 图标源文件不存在，跳过用户级图标安装", {
       iconSourcePath: params.iconSourcePath,
@@ -93,6 +87,7 @@ function installLinuxAppImageDesktopIcon(params: {
 export function installLinuxAppImageDesktopIconBestEffort(params: {
   dataDir: string;
   env?: { APPIMAGE?: string };
+  iconName?: string;
   iconSourcePath?: string;
   logger: LinuxDeepLinkRegistrationLogger;
   runCommand?: LinuxDesktopCommandRunner;
@@ -110,6 +105,9 @@ export function installLinuxAppImageDesktopIconBestEffort(params: {
   try {
     return installLinuxAppImageDesktopIcon({
       dataDir: params.dataDir,
+      // Per-flavor icon name: zakicode installs its own hicolor icon so it does
+      // not overwrite the upstream app's launcher icon in shared icon dirs.
+      iconName: params.iconName ?? LINUX_APP_ICON_DEFAULT_NAME,
       iconSourcePath: params.iconSourcePath,
       logger: params.logger,
       runCommand: params.runCommand,

@@ -703,7 +703,12 @@ export default {
     // 与 /usr/share/icons/hicolor/*/apps/zcode.png 保持一致。
     executableName: desktopProductIdentity.linuxExecutableName,
     category: "Development",
-    maintainer: "ZCode <dev@zcode.z.ai>",
+    // Fork builds carry the fork maintainer; package metadata must not claim the
+    // upstream dev team for binaries this fork produced.
+    maintainer:
+      desktopProductIdentity.flavor === "zakicode"
+        ? "ZakiCode <AbdelrhmanUZaki@users.noreply.github.com>"
+        : "ZCode <dev@zcode.z.ai>",
   },
   deb: {
     // 生产版与 Preview 必须是两个 dpkg package；只改可执行名仍会让安装器把另一版本当成升级替换。

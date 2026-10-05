@@ -1,6 +1,7 @@
 import { createLocalTtftExporter } from "./localTtftExporter.js";
 /* eslint-disable max-lines */
 import "./desktopEarlyDataBaseDirBootstrap.js";
+import { applyUserDataBaseDir } from "./desktopDataBaseDirBootstrap.js";
 import "./desktopEarlyChromiumHardwareAccelerationBootstrap.js";
 import { powerMonitor, powerSaveBlocker } from "electron";
 import { crashCapturePaths } from "./appCrashCaptureBootstrap.js";
@@ -60,7 +61,6 @@ import {
   getDataBaseDir,
   getZCodeDataRootDir,
   normalizeRuntimeProcessEnv,
-  setDataBaseDir,
 } from "@zcode/services/node";
 import {
   desktopMenuMessageIds,
@@ -1940,7 +1940,10 @@ app.whenReady().then(async () => {
   try {
     bootstrapSettings = await mainSettingService.get();
     if (bootstrapSettings.dataBaseDir) {
-      setDataBaseDir(bootstrapSettings.dataBaseDir);
+      // User-chosen custom dir: route through applyUserDataBaseDir so the host
+      // env builder treats it as an override (not a flavor default) and keeps
+      // forwarding it to spawned hosts/agents.
+      applyUserDataBaseDir(bootstrapSettings.dataBaseDir);
     }
     if (bootstrapSettings.locale) {
       loadedBootstrapLocale = true;

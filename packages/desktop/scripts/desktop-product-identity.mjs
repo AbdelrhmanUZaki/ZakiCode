@@ -5,6 +5,15 @@
  */
 export const ZCODE_PREVIEW_IDENTITY_ENV = "ZCODE_PREVIEW_IDENTITY";
 
+/**
+ * Fork release switch: when set, installers use the ZakiCode identity — a third
+ * flavor that installs and runs side-by-side with upstream ZCode (own app name,
+ * appId, Linux package names, and app-layer data dir) while the agent CLI layer
+ * stays on the shared `~/.zcode/cli` session pool. Takes effect only on the
+ * production backend, like the Preview switch.
+ */
+export const ZCODE_FORK_IDENTITY_ENV = "ZCODE_FORK_IDENTITY";
+
 const PRODUCTION_IDENTITY = Object.freeze({
   flavor: "production",
   appId: "dev.zcode.app",
@@ -23,9 +32,19 @@ const PREVIEW_IDENTITY = Object.freeze({
   cuaHelperInstallVariant: "preview",
 });
 
+const ZAKICODE_IDENTITY = Object.freeze({
+  flavor: "zakicode",
+  appId: "dev.zakicode.app",
+  productName: "ZakiCode",
+  linuxExecutableName: "zakicode",
+  linuxPackageName: "zakicode",
+  cuaHelperInstallVariant: null,
+});
+
 export const desktopProductIdentities = Object.freeze({
   production: PRODUCTION_IDENTITY,
   preview: PREVIEW_IDENTITY,
+  zakicode: ZAKICODE_IDENTITY,
 });
 
 function normalizeDesktopZCodeEnv(env) {
@@ -33,7 +52,7 @@ function normalizeDesktopZCodeEnv(env) {
 }
 
 /**
- * 开关只有一种开启拼写 `1`（`0` / 空 = 关闭），与 CI workflow 规则和 release 门的
+ * 开关只有一种开启拼写 `1`（`0` / 空 = 关），与 CI workflow 规则和 release 门的
  * `$ZCODE_PREVIEW_IDENTITY == "1"` 精确比较保持同一套语义。其它拼写在构建期直接失败，
  * 避免 `true` 之类在 YAML 路由层漏匹配、却在脚本层被当成开启，把 Preview 包打进生产验收目录。
  */
@@ -51,16 +70,37 @@ export function isPreviewIdentityRequested(env = process.env) {
 }
 
 /**
+ * Same strict `1`/`0` grammar as the Preview switch so YAML-level routing and
+ * script-level checks stay in sync; any other spelling fails the build.
+ */
+export function isForkIdentityRequested(env = process.env) {
+  const value = env[ZCODE_FORK_IDENTITY_ENV]?.trim() ?? "";
+  if (value === "1") {
+    return true;
+  }
+  if (value === "" || value === "0") {
+    return false;
+  }
+  throw new Error(
+    `invalid ${ZCODE_FORK_IDENTITY_ENV}=${env[ZCODE_FORK_IDENTITY_ENV]}; expected 1 or 0`,
+  );
+}
+
+/**
  * 产品身份（flavor）与后端环境（`ZCODE_ENV`）是两个轴：
  * - `ZCODE_ENV=test` 一律是 Preview，测试后端不能顶着正式 `ZCode` 身份覆盖用户的正式安装；
- * - `ZCODE_ENV=production` 默认是正式身份，显式 `ZCODE_PREVIEW_IDENTITY=1` 时改用 Preview 身份。
+ * - `ZCODE_ENV=production` 默认是正式身份，显式 `ZCODE_PREVIEW_IDENTITY=1` 时改用 Preview 身份；
+ * - `ZCODE_FORK_IDENTITY=1` 在生产后端上改用 ZakiCode 身份（fork 发布专用；与 Preview 开关同时设置时 Fork 优先）。
  * 未知 `ZCODE_ENV` 继续按 test 处理，和共享层 normalizeZCodeEnv 的 fail-safe 默认值一致。
  */
 export function resolveDesktopProductFlavor(env = process.env) {
-  if (isPreviewIdentityRequested(env)) {
+  if (normalizeDesktopZCodeEnv(env) !== "production") {
     return "preview";
   }
-  return normalizeDesktopZCodeEnv(env) === "production" ? "production" : "preview";
+  if (isForkIdentityRequested(env)) {
+    return "zakicode";
+  }
+  return isPreviewIdentityRequested(env) ? "preview" : "production";
 }
 
 export function resolveDesktopProductIdentity(env = process.env) {

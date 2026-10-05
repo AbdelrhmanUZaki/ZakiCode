@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { ZCodeProductFlavor } from "@zcode/shared";
 import { installLinuxAppImageDesktopIconBestEffort } from "./desktopLinuxAppImageIcon.js";
 import {
   runXdgCommand,
@@ -8,10 +9,36 @@ import {
   type LinuxDeepLinkRegistrationLogger,
 } from "./desktopLinuxXdg.js";
 
-const LINUX_DEEP_LINK_DESKTOP_FILE = "zcode.desktop";
 const LINUX_DEEP_LINK_MIME_TYPE = "x-scheme-handler/zcode";
-// 归属标记：用于识别用户级 zcode.desktop 是否由本应用写入（历史所有版本都带这行 Comment）。
-const LINUX_DESKTOP_ENTRY_OWNERSHIP_MARKER = "Comment=ZCode Desktop App";
+
+interface LinuxDesktopEntryIdentity {
+  desktopFileBaseName: string;
+  iconName: string;
+  ownershipMarker: string;
+}
+
+/**
+ * Desktop-entry identity per product flavor. The zakicode flavor owns a
+ * separate desktop file and icon name so it registers side-by-side with an
+ * upstream install (whose system-level zcode.desktop must not suppress the
+ * fork's user-level entry); the zcode:// scheme itself stays shared.
+ */
+export function resolveLinuxDesktopEntryIdentity(
+  productFlavor: ZCodeProductFlavor = "production",
+): LinuxDesktopEntryIdentity {
+  return productFlavor === "zakicode"
+    ? {
+        desktopFileBaseName: "zakicode",
+        iconName: "zakicode",
+        ownershipMarker: "Comment=ZakiCode Desktop App",
+      }
+    : {
+        desktopFileBaseName: "zcode",
+        iconName: "zcode",
+        // 归属标记：用于识别用户级 zcode.desktop 是否由本应用写入（历史所有版本都带这行 Comment）。
+        ownershipMarker: "Comment=ZCode Desktop App",
+      };
+}
 
 type LinuxDesktopEnv = {
   APPIMAGE?: string;
@@ -23,6 +50,7 @@ interface RegisterLinuxDeepLinkProtocolOptions {
   executablePath: string;
   homeDir: string;
   productName?: string;
+  productFlavor?: ZCodeProductFlavor;
   iconSourcePath?: string;
   env?: LinuxDesktopEnv;
   argv?: string[];
@@ -108,9 +136,11 @@ function createLinuxDeepLinkDesktopEntry(params: {
   args?: string[];
   productName?: string;
   iconName?: string;
+  ownershipMarker?: string;
 }): string {
   const productName = params.productName ?? "ZCode";
   const iconName = params.iconName ?? "zcode";
+  const ownershipMarker = params.ownershipMarker ?? "Comment=ZCode Desktop App";
   const command = {
     executablePath: params.executablePath,
     args: params.args ?? [],
@@ -118,7 +148,7 @@ function createLinuxDeepLinkDesktopEntry(params: {
   return [
     "[Desktop Entry]",
     `Name=${productName}`,
-    LINUX_DESKTOP_ENTRY_OWNERSHIP_MARKER,
+    ownershipMarker,
     `Exec=${formatDesktopExec(command)}`,
     "Terminal=false",
     "Type=Application",
@@ -151,9 +181,12 @@ function resolveLinuxSystemApplicationDirs(env?: { XDG_DATA_DIRS?: string }): st
   return dataDirs.map((dir) => join(dir, "applications"));
 }
 
-function findSystemLevelDesktopEntryPath(systemApplicationDirs: string[]): string | undefined {
+function findSystemLevelDesktopEntryPath(
+  systemApplicationDirs: string[],
+  desktopFileName: string,
+): string | undefined {
   for (const dir of systemApplicationDirs) {
-    const candidate = join(dir, LINUX_DEEP_LINK_DESKTOP_FILE);
+    const candidate = join(dir, desktopFileName);
     // 边界：目录或损坏的路径不应被当成有效系统级条目，否则纯 AppImage 用户
     // 的用户级注册会被病态路径误抑制。只有普通文件才参与遮蔽判断。
     try {
@@ -167,14 +200,12 @@ function findSystemLevelDesktopEntryPath(systemApplicationDirs: string[]): strin
   return undefined;
 }
 
-function isOwnedDesktopEntry(path: string): boolean {
+function isOwnedDesktopEntry(path: string, ownershipMarker: string): boolean {
   try {
     const content = readFileSync(path, "utf8");
     // 去掉 \r 与行首尾空白，兼容 CRLF 行尾或手工编辑器引入的额外空白，
     // 避免可清理的遗留条目被误判为用户自定义条目而永久残留。
-    return content
-      .split("\n")
-      .some((line) => line.replaceAll("\r", "").trim() === LINUX_DESKTOP_ENTRY_OWNERSHIP_MARKER);
+    return content.split("\n").some((line) => line.replaceAll("\r", "").trim() === ownershipMarker);
   } catch {
     return false;
   }
@@ -182,29 +213,30 @@ function isOwnedDesktopEntry(path: string): boolean {
 
 function removeOwnedUserDesktopEntry(
   desktopFilePath: string,
+  ownershipMarker: string,
   logger: LinuxDeepLinkRegistrationLogger,
 ): void {
   if (!existsSync(desktopFilePath)) {
     return;
   }
-  if (!isOwnedDesktopEntry(desktopFilePath)) {
-    logger.warn("[deep-link] Linux 用户级 zcode.desktop 非本应用写入，保留不清理", {
+  if (!isOwnedDesktopEntry(desktopFilePath, ownershipMarker)) {
+    logger.warn("[deep-link] Linux 用户级 desktop entry 非本应用写入，保留不清理", {
       desktopFilePath,
     });
     return;
   }
   try {
     rmSync(desktopFilePath);
-    logger.info("[deep-link] 已清理遗留的用户级 zcode.desktop，恢复系统级条目", {
+    logger.info("[deep-link] 已清理遗留的用户级 desktop entry，恢复系统级条目", {
       desktopFilePath,
     });
   } catch (error) {
-    logger.warn("[deep-link] 清理遗留用户级 zcode.desktop 失败", { desktopFilePath, error });
+    logger.warn("[deep-link] 清理遗留的用户级 desktop entry 失败", { desktopFilePath, error });
   }
 }
 
-function resolveLinuxDeepLinkDesktopFilePath(dataDir: string): string {
-  return join(dataDir, "applications", LINUX_DEEP_LINK_DESKTOP_FILE);
+function resolveLinuxDeepLinkDesktopFilePath(dataDir: string, desktopFileName: string): string {
+  return join(dataDir, "applications", desktopFileName);
 }
 
 function writeFileIfChanged(path: string, content: string): boolean {
@@ -218,31 +250,37 @@ function writeFileIfChanged(path: string, content: string): boolean {
 }
 
 export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProtocolOptions): void {
+  const identity = resolveLinuxDesktopEntryIdentity(options.productFlavor);
+  const desktopFileName = `${identity.desktopFileBaseName}.desktop`;
   const command = resolveLinuxDeepLinkCommand({
     env: options.env,
     executablePath: options.executablePath,
     argv: options.argv,
   });
   const dataDir = resolveLinuxUserDataDir({ env: options.env, homeDir: options.homeDir });
-  const desktopFilePath = resolveLinuxDeepLinkDesktopFilePath(dataDir);
+  const desktopFilePath = resolveLinuxDeepLinkDesktopFilePath(dataDir, desktopFileName);
   const applicationsDir = dirname(desktopFilePath);
   const desktopEntry = createLinuxDeepLinkDesktopEntry({
     ...command,
     productName: options.productName,
+    iconName: identity.iconName,
+    ownershipMarker: identity.ownershipMarker,
   });
   let protocolRegistered = false;
   const runCommand = options.runCommand ?? runXdgCommand;
 
-  // 用户级 zcode.desktop 在 XDG
+  // 用户级 desktop entry 在 XDG
   // 解析中永远优先于系统级同名条目。rpm/deb 安装后，旧 AppImage 写入的用户级条目会把
-  // /usr/share/applications/zcode.desktop 持续遮蔽，快捷方式和 zcode:// deep link 一直
+  // 系统级同名条目持续遮蔽，快捷方式和 zcode:// deep link 一直
   // 指向旧 AppImage（文件还在时）或直接失效（文件被删后），只有手动跑一次新版才会被覆盖。
   // 现在只要检测到系统级同 ID 条目：
   // - 系统安装形态（rpm/deb）运行时：清掉本应用写入的遗留用户级条目，且不再写用户级；
   // - AppImage 运行时：不再写用户级条目和用户级图标，避免旧 AppImage 再度遮蔽系统安装。
-  // 用户手写的自定义 zcode.desktop（无归属标记）不受影响，保留不清理。
+  // 用户手写的自定义条目（无归属标记）不受影响，保留不清理。
+  // zakicode flavor 的条目名不同，上游的系统级 zcode.desktop 不会遮蔽 fork 的用户级注册。
   const systemDesktopEntryPath = findSystemLevelDesktopEntryPath(
     options.systemApplicationDirs ?? resolveLinuxSystemApplicationDirs(options.env),
+    desktopFileName,
   );
 
   try {
@@ -252,7 +290,7 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
         systemDesktopEntryPath,
         desktopFilePath,
       });
-      removeOwnedUserDesktopEntry(desktopFilePath, options.logger);
+      removeOwnedUserDesktopEntry(desktopFilePath, identity.ownershipMarker, options.logger);
     } else {
       changed = writeFileIfChanged(desktopFilePath, desktopEntry);
     }
@@ -262,7 +300,7 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
     const updateResult = runCommand("update-desktop-database", [applicationsDir]);
     const defaultResult = runCommand("xdg-mime", [
       "default",
-      LINUX_DEEP_LINK_DESKTOP_FILE,
+      desktopFileName,
       LINUX_DEEP_LINK_MIME_TYPE,
     ]);
 
@@ -320,6 +358,7 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
     : installLinuxAppImageDesktopIconBestEffort({
         dataDir,
         env: options.env,
+        iconName: identity.iconName,
         iconSourcePath: options.iconSourcePath,
         logger: options.logger,
         runCommand,

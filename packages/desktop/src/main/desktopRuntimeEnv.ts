@@ -36,6 +36,7 @@ import {
   resolveRemoteCdnBaseUrls as resolveOrderedRemoteCdnBaseUrls,
   type ResolveRemoteCdnOptions,
 } from "./remoteCdn.js";
+import { isFlavorDefaultDataBaseDirActive } from "./desktopDataBaseDirBootstrap.js";
 import { getElectronAppPath, isElectronAppPackaged } from "./desktopElectronApp.js";
 
 const isLocalDevelopmentRuntime = !isElectronAppPackaged();
@@ -45,6 +46,10 @@ export const desktopRuntimeEnv: ZCodeRuntimeEnv = isLocalDevelopmentRuntime
 // 身份看编译期 flavor 而不是 ZCODE_ENV：ZCODE_PREVIEW_IDENTITY=1 的生产后端构建同样是 Preview，
 // 需要独立的应用名、Electron 数据目录和 Helper 安装子目录才能与正式版并排运行。
 const isPreviewPackagedRuntime = !isLocalDevelopmentRuntime && ZCODE_PRODUCT_FLAVOR === "preview";
+// Fork release builds (ZCODE_FORK_IDENTITY=1) need the same kind of separation:
+// own app name → own Electron userData and single-instance lock, so ZakiCode and
+// an upstream ZCode install can run at the same time.
+const isZakicodePackagedRuntime = !isLocalDevelopmentRuntime && ZCODE_PRODUCT_FLAVOR === "zakicode";
 
 function readRuntimeEnvOverride(name: string): string | undefined {
   return process.env[name]?.trim() || undefined;
@@ -60,7 +65,13 @@ function isTruthyRuntimeEnvOverride(name: string): boolean {
 // 这里允许测试显式隔离运行时身份，正常桌面/远控路径保持原来的默认值。
 export const runtimeApplicationName =
   readRuntimeEnvOverride("ZCODE_DESKTOP_APPLICATION_NAME") ??
-  (isLocalDevelopmentRuntime ? "ZCode Dev" : isPreviewPackagedRuntime ? "ZCode Preview" : "ZCode");
+  (isLocalDevelopmentRuntime
+    ? "ZCode Dev"
+    : isZakicodePackagedRuntime
+      ? "ZakiCode"
+      : isPreviewPackagedRuntime
+        ? "ZCode Preview"
+        : "ZCode");
 // Electron 的 app.getPath("home") 不一定跟随测试进程里的 HOME 覆盖。
 // e2e 默认工作区依赖 home 路径，因此提供显式覆盖，避免测试写到开发者真实 ~/ZCodeProject。
 export const runtimeHomePath = readRuntimeEnvOverride("ZCODE_DESKTOP_HOME_DIR");
@@ -553,7 +564,13 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
     // 模型请求默认 header 由 agent 进程构造，过去只继承 shell env 导致桌面启动时拿不到 app 版本。
     // 这里从 main 进程显式下发，agent 子进程继承 host env 后即可稳定写入请求 header。
     [ZCODE_APP_VERSION_ENV]: ZCODE_VERSION,
-    ...(dataBaseDir !== homedir() ? { ZCODE_DATA_BASE_DIR: dataBaseDir } : {}),
+    // Forward the data root only for genuine user overrides. The zakicode
+    // flavor default (~/.zakicode) is app-layer-only: forwarding it here would
+    // root spawned hosts/agents at the fork dir and split the session pool that
+    // ZakiCode deliberately shares with an upstream install.
+    ...(dataBaseDir !== homedir() && !isFlavorDefaultDataBaseDirActive()
+      ? { ZCODE_DATA_BASE_DIR: dataBaseDir }
+      : {}),
     ...(windowsAppInstallDir ? { [ZCODE_WINDOWS_APP_INSTALL_DIR_ENV]: windowsAppInstallDir } : {}),
     ...(bundledCuaHelperAppPath
       ? { [ZCODE_CUA_BUNDLED_HELPER_APP_PATH_ENV]: bundledCuaHelperAppPath }

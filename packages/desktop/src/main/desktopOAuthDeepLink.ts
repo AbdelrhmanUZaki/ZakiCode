@@ -8,6 +8,7 @@ import {
   type OAuthProviderId,
   type OAuthStateRegistration,
   PlatformChannels,
+  ZCODE_PRODUCT_FLAVOR,
 } from "@zcode/shared";
 import {
   extractWorkspaceOpenPath,
@@ -435,6 +436,9 @@ export function registerDeepLinkProtocol(
       executablePath: process.execPath,
       homeDir: app.getPath("home"),
       productName: app.name,
+      // Zakicode registers zakicode.desktop + its own icon name so it can
+      // coexist with an upstream install; other flavors keep zcode.desktop.
+      productFlavor: ZCODE_PRODUCT_FLAVOR,
       iconSourcePath: options.iconPath,
       env: process.env,
       argv: process.argv,
